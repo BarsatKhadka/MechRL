@@ -1,0 +1,32 @@
+{
+  "task": "tracr_reverse",
+  "model": "custom",
+  "n_layers": 4,
+  "n_heads": 1,
+  "batch_size": 6,
+  "seq_len": 4,
+  "has_corrupted": true,
+  "metric_aggregate_clean": 0.0,
+  "metric_aggregate_corrupted": 0.4444439113140106,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "acdc.tracr_task.utils.get_all_tracr_things(reverse)",
+    "model": "tracr-compiled tiny transformer (NOT GPT-2 small)",
+    "task_description": "reverse [a, b, c] -> [c, b, a]"
+  },
+  "first_5_clean_prompts": [
+    "tokens=[3, 0, 1, 2]",
+    "tokens=[3, 0, 2, 1]",
+    "tokens=[3, 1, 0, 2]",
+    "tokens=[3, 1, 2, 0]",
+    "tokens=[3, 2, 0, 1]"
+  ],
+  "first_5_corrupted_prompts": [
+    "tokens=[3, 0, 2, 1]",
+    "tokens=[3, 2, 0, 1]",
+    "tokens=[3, 0, 1, 2]",
+    "tokens=[3, 2, 1, 0]",
+    "tokens=[3, 1, 0, 2]"
+  ]
+}

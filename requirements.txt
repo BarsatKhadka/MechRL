@@ -1,0 +1,33 @@
+# Core ML
+# Install torch CPU-only with:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# (or omit --index-url for default which will be CUDA on Linux/Windows with NVIDIA)
+torch>=2.6
+
+# TransformerLens — hook-based access to GPT-2 internals
+transformer-lens>=3.0
+
+# RL environment scaffolding
+gymnasium>=1.0
+
+# Numerical / data
+numpy
+pandas
+einops
+jaxtyping
+
+# HuggingFace ecosystem (pulled in by transformer-lens but pinned here for clarity)
+transformers
+datasets
+tokenizers
+huggingface-hub
+
+# Utilities
+tqdm
+
+# ACDC (Automatic Circuit Discovery) is installed as an editable local package.
+# Clone it into paperCodes/Automatic-Circuit-Discovery/ then run:
+#   pip install -e paperCodes/Automatic-Circuit-Discovery/
+# Source: https://github.com/ArthurConmy/Automatic-Circuit-Discovery
+# Note: their pyproject.toml has been patched locally to drop pygraphviz/tracr
+# and bump torch/transformer-lens constraints. See that file for details.

@@ -1,0 +1,32 @@
+{
+  "task": "docstring_gpt2",
+  "model": "gpt2",
+  "n_layers": 12,
+  "n_heads": 12,
+  "batch_size": 20,
+  "seq_len": 41,
+  "has_corrupted": true,
+  "metric_aggregate_clean": -4.255575656890869,
+  "metric_aggregate_corrupted": 0.3991406559944153,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "adapted from Heimersheim & Janiak (2023) for GPT-2",
+    "task": "predict next docstring argument name",
+    "arg_pool_size": 43
+  },
+  "first_5_clean_prompts": [
+    "def f(self, level, port, name, path):\n    \"\"\"summary\n    :param port:\n    :param name:\n    :param",
+    "def f(self, count, context, output, limit):\n    \"\"\"summary\n    :param context:\n    :param output:\n    :param",
+    "def f(self, stream, request, index, type):\n    \"\"\"summary\n    :param request:\n    :param index:\n    :param",
+    "def f(self, count, token, mode, header):\n    \"\"\"summary\n    :param token:\n    :param mode:\n    :param",
+    "def f(self, version, filter, data, header):\n    \"\"\"summary\n    :param filter:\n    :param data:\n    :param"
+  ],
+  "first_5_corrupted_prompts": [
+    "def f(self, level, name, port, limit):\n    \"\"\"summary\n    :param name:\n    :param port:\n    :param",
+    "def f(self, shape, limit, count, context):\n    \"\"\"summary\n    :param limit:\n    :param count:\n    :param",
+    "def f(self, type, state, request, index):\n    \"\"\"summary\n    :param state:\n    :param request:\n    :param",
+    "def f(self, filter, mode, header, token):\n    \"\"\"summary\n    :param mode:\n    :param header:\n    :param",
+    "def f(self, version, header, query, filter):\n    \"\"\"summary\n    :param header:\n    :param query:\n    :param"
+  ]
+}

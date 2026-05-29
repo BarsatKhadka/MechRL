@@ -1,0 +1,32 @@
+{
+  "task": "induction",
+  "model": "gpt2",
+  "n_layers": 12,
+  "n_heads": 12,
+  "batch_size": 20,
+  "seq_len": 49,
+  "has_corrupted": true,
+  "metric_aggregate_clean": -0.4674610197544098,
+  "metric_aggregate_corrupted": -6.156787395477295,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "Olsson 2022 style; real text from wikitext-2",
+    "half_len": 25,
+    "seq_len": 49
+  },
+  "first_5_clean_prompts": [
+    " near Arkadelphia on the Ouachita River , 75 miles south from Little Rock . The tools , machinery , and the material near Arkadelphia on the Ouachita River , 75 miles south from Little Rock . The tools , machinery , and the",
+    " map : once a character is selected , the player moves the character around the battlefield in third @-@ person . A character map : once a character is selected , the player moves the character around the battlefield in third @-@ person . A",
+    " Hall . The museum remained in the tower building for approximately fifty @-@ five years . The area surrounding the Tower Building had Hall . The museum remained in the tower building for approximately fifty @-@ five years . The area surrounding the Tower Building",
+    " for a suitable person to head this activity , General Hindman turned to the Confederate Navy and borrowed Lieutenant John W. Dunnington for a suitable person to head this activity , General Hindman turned to the Confederate Navy and borrowed Lieutenant John W. Dun",
+    " exclusively devoted to the uses and purposes of a public park \" for 1 @,@ 000 acres ( 4 km \u00b2 ) exclusively devoted to the uses and purposes of a public park \" for 1 @,@ 000 acres ( 4 km \u00b2"
+  ],
+  "first_5_corrupted_prompts": [
+    " last part of the month . \"The military force at Little Rock under Dunnington 's command consisted of four officers : himself near Arkadelphia on the Ouachita River , 75 miles south from Little Rock . The tools , machinery , and the",
+    " , it was part of Little Rock 's first military installation . Since its decommissioning , The Tower Building has housed two map : once a character is selected , the player moves the character around the battlefield in third @-@ person . A",
+    " at The Chicago World 's Fair . At the fair 's conclusion , artifacts from the exhibit were displayed in the Tower Building Hall . The museum remained in the tower building for approximately fifty @-@ five years . The area surrounding the Tower Building",
+    " Indian nation have all been recalled from winter quarters to reinforce the garrison at Fort Smith . The garrison at Fort Smith had been previously for a suitable person to head this activity , General Hindman turned to the Confederate Navy and borrowed Lieutenant John W. Dun",
+    " were only 1 @,@ 364 percussion weapons available . Disposition of the weapons found in the Arsenal is somewhat sketchy , exclusively devoted to the uses and purposes of a public park \" for 1 @,@ 000 acres ( 4 km \u00b2"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "task": "successor_heads",
+  "model": "gpt2",
+  "n_layers": 12,
+  "n_heads": 12,
+  "batch_size": 20,
+  "seq_len": 5,
+  "has_corrupted": true,
+  "metric_aggregate_clean": -0.3650449216365814,
+  "metric_aggregate_corrupted": 0.15612712502479553,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "Gould et al. 2024 (synthetic templated version)",
+    "categories": [
+      "days",
+      "months",
+      "numbers"
+    ],
+    "task": "predict next item in ordered sequence"
+  },
+  "first_5_clean_prompts": [
+    "The month after July is",
+    "The month after September is",
+    "The month after May is",
+    "The month after October is",
+    "The number after three is"
+  ],
+  "first_5_corrupted_prompts": [
+    "The month after January is",
+    "The month after August is",
+    "The month after September is",
+    "The month after April is",
+    "The number after four is"
+  ]
+}

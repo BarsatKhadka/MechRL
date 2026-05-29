@@ -1,0 +1,28 @@
+whole-plan.md
+working-environment.md
+paperCodes/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data / artifacts
+*.pt
+*.ckpt
+wandb/
+runs/
+outputs/

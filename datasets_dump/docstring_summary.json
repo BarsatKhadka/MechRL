@@ -1,0 +1,31 @@
+{
+  "task": "docstring",
+  "model": "Attn_Only_4L512W_C4_Code",
+  "n_layers": 4,
+  "n_heads": 8,
+  "batch_size": 10,
+  "seq_len": 41,
+  "has_corrupted": true,
+  "metric_aggregate_clean": 0.0,
+  "metric_aggregate_corrupted": 4.194615840911865,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "acdc.docstring.utils.get_all_docstring_things",
+    "model": "attn-only-4l (NOT GPT-2 small)"
+  },
+  "first_5_clean_prompts": [
+    "<|BOS|>\ndef old(self, first, files, page, names, size, read):\n    \"\"\"sector gap population\n\n    :param page: message tree\n    :param names: detail mine\n    :param",
+    "<|BOS|>\ndef model(self, fields, page, table, config, count, number):\n    \"\"\"unit bone paper\n\n    :param table: selection sky\n    :param config: host action\n    :param",
+    "<|BOS|>\ndef root(self, event, context, task, tag, resource, base):\n    \"\"\"stone delay sense\n\n    :param task: reply sea\n    :param tag: search wire\n    :param",
+    "<|BOS|>\ndef error(self, image, client, user, name, port, index):\n    \"\"\"dog request wheel\n\n    :param user: travel creation\n    :param name: notice bell\n    :param",
+    "<|BOS|>\ndef error(self, create, option, file, run, client, project):\n    \"\"\"land employment camp\n\n    :param file: protein author\n    :param run: forest degree\n    :param"
+  ],
+  "first_5_corrupted_prompts": [
+    "<|BOS|>\ndef old(self, first, files, project, target, new, read):\n    \"\"\"sector gap population\n\n    :param image: message tree\n    :param update: detail mine\n    :param",
+    "<|BOS|>\ndef model(self, fields, page, old, option, project, number):\n    \"\"\"unit bone paper\n\n    :param user: selection sky\n    :param context: host action\n    :param",
+    "<|BOS|>\ndef root(self, event, context, line, request, default, base):\n    \"\"\"stone delay sense\n\n    :param form: reply sea\n    :param names: search wire\n    :param",
+    "<|BOS|>\ndef error(self, image, client, content, url, query, index):\n    \"\"\"dog request wheel\n\n    :param base: travel creation\n    :param config: notice bell\n    :param",
+    "<|BOS|>\ndef error(self, create, option, output, host, label, project):\n    \"\"\"land employment camp\n\n    :param first: protein author\n    :param text: forest degree\n    :param"
+  ]
+}

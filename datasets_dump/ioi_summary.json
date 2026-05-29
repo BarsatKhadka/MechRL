@@ -1,0 +1,31 @@
+{
+  "task": "ioi",
+  "model": "gpt2",
+  "n_layers": 12,
+  "n_heads": 12,
+  "batch_size": 20,
+  "seq_len": 15,
+  "has_corrupted": true,
+  "metric_aggregate_clean": -3.5695581436157227,
+  "metric_aggregate_corrupted": -0.2852916717529297,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "acdc.ioi.utils.get_all_ioi_things",
+    "prompt_type": "ABBA"
+  },
+  "first_5_clean_prompts": [
+    "Then, Mary and Jeffrey went to the restaurant. Jeffrey gave a bone to",
+    "Then, Brittany and Jamie went to the garden. Jamie gave a necklace to",
+    "Then, Christine and Amy went to the station. Amy gave a drink to",
+    "Then, Jonathan and Adam went to the garden. Adam gave a bone to",
+    "Then, Katie and Crystal went to the garden. Crystal gave a computer to"
+  ],
+  "first_5_corrupted_prompts": [
+    "Then, Melissa and Nicole went to the restaurant. Anthony gave a bone to",
+    "Then, Lauren and Alicia went to the garden. Daniel gave a necklace to",
+    "Then, Thomas and Elizabeth went to the station. Jesse gave a drink to",
+    "Then, Kelly and Nathan went to the garden. Travis gave a bone to",
+    "Then, Brittany and Christina went to the garden. Jeremy gave a computer to"
+  ]
+}

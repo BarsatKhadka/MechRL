@@ -1,0 +1,55 @@
+{
+  "task": "greaterthan",
+  "model": "gpt2",
+  "n_layers": 12,
+  "n_heads": 12,
+  "batch_size": 20,
+  "seq_len": 12,
+  "has_corrupted": true,
+  "metric_aggregate_clean": -0.8517136573791504,
+  "metric_aggregate_corrupted": 0.2809993326663971,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "Hanna et al. 2023 (helpers from paperCodes/gpt2-greater-than)",
+    "prompt_example": "The siege lasted from the year 1692 to the year 16",
+    "corrupted_example": "The siege lasted from the year 1601 to the year 16",
+    "full_years": [
+      1692,
+      1578,
+      1365,
+      1405,
+      1435,
+      1226,
+      1627,
+      1757,
+      1164,
+      1233,
+      1148,
+      1408,
+      1634,
+      1293,
+      1806,
+      1816,
+      1208,
+      1346,
+      1841,
+      1551
+    ],
+    "target_token_length": 12
+  },
+  "first_5_clean_prompts": [
+    "The siege lasted from the year 1692 to the year 16",
+    "The reforms lasted from the year 1578 to the year 15",
+    "The fall lasted from the year 1365 to the year 13",
+    "The demonstrations lasted from the year 1405 to the year 14",
+    "The incarceration lasted from the year 1435 to the year 14"
+  ],
+  "first_5_corrupted_prompts": [
+    "The siege lasted from the year 1601 to the year 16",
+    "The reforms lasted from the year 1501 to the year 15",
+    "The fall lasted from the year 1301 to the year 13",
+    "The demonstrations lasted from the year 1401 to the year 14",
+    "The incarceration lasted from the year 1401 to the year 14"
+  ]
+}

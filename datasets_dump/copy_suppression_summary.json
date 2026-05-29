@@ -1,0 +1,34 @@
+{
+  "task": "copy_suppression",
+  "model": "gpt2",
+  "n_layers": 12,
+  "n_heads": 12,
+  "batch_size": 20,
+  "seq_len": 18,
+  "has_corrupted": true,
+  "metric_aggregate_clean": 18.517154693603516,
+  "metric_aggregate_corrupted": 12.0656156539917,
+  "per_prompt_metric_clean": [],
+  "per_prompt_metric_corrupted": [],
+  "metadata": {
+    "source": "McDougall et al. 2023 (synthetic templated version)",
+    "canonical_head": "L10.H7",
+    "task": "measure suppression of recently-mentioned token",
+    "n_names": 20,
+    "n_foods": 8
+  },
+  "first_5_clean_prompts": [
+    "<|endoftext|>Henry and Sophia are friends. Henry was eating a sandwich. Sophia was also eating a",
+    "<|endoftext|>Charles and Emma are friends. Charles was eating a taco. Emma was also eating a",
+    "<|endoftext|>Laura and Emma are friends. Laura was eating a steak. Emma was also eating a",
+    "<|endoftext|>David and Charles are friends. David was eating a burger. Charles was also eating a",
+    "<|endoftext|>Michael and Sarah are friends. Michael was eating a salad. Sarah was also eating a"
+  ],
+  "first_5_corrupted_prompts": [
+    "<|endoftext|>Henry and Sophia are friends. Henry was eating a burger. Sophia was also eating a",
+    "<|endoftext|>Charles and Emma are friends. Charles was eating a wrap. Emma was also eating a",
+    "<|endoftext|>Laura and Emma are friends. Laura was eating a salad. Emma was also eating a",
+    "<|endoftext|>David and Charles are friends. David was eating a wrap. Charles was also eating a",
+    "<|endoftext|>Michael and Sarah are friends. Michael was eating a wrap. Sarah was also eating a"
+  ]
+}
