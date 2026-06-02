@@ -201,7 +201,7 @@ class PPOTrainer:
         y_pred = b_val.cpu().numpy()
         y_true = b_ret.cpu().numpy()
         var_y = np.var(y_true)
-        last["explained_var"] = float("nan") if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+        last["explained_var"] = float("nan") if var_y == 0 else float(1 - np.var(y_true - y_pred) / var_y)
         return last
 
     # ---- main loop ----
@@ -247,7 +247,7 @@ class PPOTrainer:
                     flush=True,
                 )
             if mf is not None:
-                mf.write(json.dumps(rec) + "\n")
+                mf.write(json.dumps(rec, default=float) + "\n")   # default=float: tolerate np scalars
                 mf.flush()
             if save_dir is not None and save_every and it % save_every == 0:
                 torch.save(self.policy.state_dict(), Path(save_dir) / f"policy_iter{it}.pt")

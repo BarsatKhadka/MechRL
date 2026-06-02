@@ -10,6 +10,13 @@ repo venv, env-var driven so the same script covers single- and multi-task runs.
 cd ~/MechRL
 module load python/2025.12-2
 python -m venv venv && source venv/bin/activate
+
+# IMPORTANT — install the CUDA-matched torch FIRST. The L40S nodes run a CUDA 12.8
+# driver; default PyPI torch is built for a newer CUDA and silently falls back to
+# CPU. Install the cu128 build (or cu126) before the rest:
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+python -c "import torch; print('cuda visible:', torch.cuda.is_available())"   # must be True
+
 pip install -r requirements.txt
 # install the two vendored libs as editable packages (BOTH required):
 pip install -e paperCodes/Automatic-Circuit-Discovery   # ACDC  -> import acdc

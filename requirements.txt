@@ -8,7 +8,10 @@
 #   5. python -c "import acdc, eap; print('ok')"
 #
 # Notes:
-#   - torch is left flexible so Linux/CUDA installs the GPU wheel (local was +cpu).
+#   - torch is left flexible, BUT on the L40S cluster (CUDA 12.8 driver) install the
+#     matched build FIRST or it falls back to CPU:
+#       pip install torch --index-url https://download.pytorch.org/whl/cu128
+#     then `pip install -r requirements.txt` (torch>=2.6 is already satisfied).
 #   - tracr + the jax stack are intentionally OMITTED: tracr tasks are not part of
 #     the GPT-2 training/eval pool, and mechrl/tasks/__init__ imports them lazily.
 #   - acdc / eap / mechrl are editable local installs, not listed here.
