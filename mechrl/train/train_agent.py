@@ -67,7 +67,9 @@ def parse_args():
     p.add_argument("--invalid-penalty", type=float, default=-0.01)
     # PPO
     p.add_argument("--total-iterations", type=int, default=500)
-    p.add_argument("--num-steps", type=int, default=256)
+    # num-steps should be >= step-budget so each rollout finishes >=1 episode
+    # (otherwise per-iter episode metrics are nan on rollouts that complete none).
+    p.add_argument("--num-steps", type=int, default=512)
     p.add_argument("--num-minibatches", type=int, default=4)
     p.add_argument("--update-epochs", type=int, default=4)
     p.add_argument("--lr", type=float, default=2.5e-4)
