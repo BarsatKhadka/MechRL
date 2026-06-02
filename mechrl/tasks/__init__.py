@@ -11,8 +11,13 @@ from mechrl.tasks.docstring_gpt2 import DocstringGPT2Task  # GPT-2 small
 from mechrl.tasks.copy_suppression import CopySuppressionTask
 from mechrl.tasks.successor_heads import SuccessorHeadsTask
 
-# Cross-model / synthetic
-from mechrl.tasks.tracr import TracrReverseTask, TracrProportionTask
+# Cross-model / synthetic (optional — needs tracr + jax, only used for tracr
+# tasks which are NOT part of the GPT-2 training/eval pool. Import is guarded so
+# environments without jax/tracr (e.g. the HPC training venv) still work.)
+try:
+    from mechrl.tasks.tracr import TracrReverseTask, TracrProportionTask
+except ImportError:
+    TracrReverseTask = TracrProportionTask = None
 
 # Verified passing variants (Gate 1 + Gate 2 passed)
 from mechrl.tasks.greaterthan_variants import (

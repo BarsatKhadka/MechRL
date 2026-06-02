@@ -11,9 +11,12 @@ cd ~/MechRL
 module load python/2025.12-2
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-# install the two vendored libs the same way as locally (editable / path):
-pip install -e paperCodes/Automatic-Circuit-Discovery
-# eap-ig is used via path import (see mechrl/env) — no install needed
+# install the two vendored libs as editable packages (BOTH required):
+pip install -e paperCodes/Automatic-Circuit-Discovery   # ACDC  -> import acdc
+pip install -e paperCodes/eap-ig                          # eap   -> import eap (EAP-IG)
+# gpt2-greater-than is imported via a relative sys.path insert (no install).
+# copy-suppression clone is NOT used by our code (our copy_suppression task is custom).
+python -c "import acdc, eap; print('acdc + eap ok')"     # verify
 
 # pre-fetch GPT-2 into the HF cache so compute nodes (offline) can load it:
 python -c "from transformers import GPT2LMHeadModel, GPT2Tokenizer; GPT2LMHeadModel.from_pretrained('gpt2'); GPT2Tokenizer.from_pretrained('gpt2')"

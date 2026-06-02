@@ -34,6 +34,7 @@ mkdir -p logs runs
 # Pre-fetch once on the login node, then keep these on:
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export PYTHONUNBUFFERED=1   # stream python stdout live into the .out log
 
 TASKS="${TASKS:-all}"
 SEED="${SEED:-0}"
