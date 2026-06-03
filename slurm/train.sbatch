@@ -7,6 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
+#SBATCH --exclude=node049   # node049 threw an uncorrectable ECC (bad GPU memory); skip it
 
 # Magnolia (Ole Miss MCSR) — L40S nodes, 46GB VRAM, bf16 native.
 #
