@@ -7,7 +7,9 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --exclude=node049   # node049 threw an uncorrectable ECC (bad GPU memory); skip it
+# node049 threw a (likely transient) uncorrectable ECC once. It's not hardcoded as
+# excluded because it's often the only free node. To avoid it on a given submit:
+#   sbatch --exclude=node049 --export=ALL,... slurm/train.sbatch
 
 # Magnolia (Ole Miss MCSR) — L40S nodes, 46GB VRAM, bf16 native.
 #
