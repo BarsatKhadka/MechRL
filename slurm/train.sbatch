@@ -10,14 +10,19 @@
 
 # Magnolia (Ole Miss MCSR) — L40S nodes, 46GB VRAM, bf16 native.
 #
-# Multi-task (all 13 verified tasks):
-#   sbatch slurm/train.sbatch
-# Single-task signal run (train on IOI only — the first "does it learn" test):
-#   sbatch --export=ALL,TASKS=IOITask slurm/train.sbatch
-# A whole family:
-#   sbatch --export=ALL,TASKS=greaterthan slurm/train.sbatch
-# Override scale:
-#   sbatch --export=ALL,TASKS=all,ITERS=800,STEPS=256,BUDGET=400,SEED=1 slurm/train.sbatch
+# Env-var knobs (all optional):
+#   TASKS=IOITask|ioi|greaterthan|docstring|all   which task(s)        (default all)
+#   BUDGET=1500     max actions per episode (raises the pruning ceiling) (default 400)
+#   STEPS=...       rollout length; defaults to BUDGET so each rollout completes >=1 episode
+#   SPARSITY=0.001  per-cut bonus; nudges toward smaller circuits        (default 0.001)
+#   LR=2.5e-4       learning rate                                        (default 2.5e-4)
+#   ITERS=800       PPO iterations                                       (default 500)
+#   SEED=0
+#
+# Examples:
+#   sbatch --export=ALL,TASKS=IOITask slurm/train.sbatch                 # single-task IOI
+#   sbatch --export=ALL,TASKS=IOITask,BUDGET=1500,ITERS=800 slurm/train.sbatch   # deeper pruning
+#   sbatch slurm/train.sbatch                                            # all 13 tasks
 
 set -euo pipefail
 
@@ -39,10 +44,12 @@ export PYTHONUNBUFFERED=1   # stream python stdout live into the .out log
 TASKS="${TASKS:-all}"
 SEED="${SEED:-0}"
 ITERS="${ITERS:-500}"
-STEPS="${STEPS:-256}"
 BUDGET="${BUDGET:-400}"
+STEPS="${STEPS:-$BUDGET}"        # default rollout length to the budget => each rollout finishes >=1 episode (no nan metrics)
+SPARSITY="${SPARSITY:-0.001}"
+LR="${LR:-2.5e-4}"
 
-echo "[start] $(date) tasks=${TASKS} seed=${SEED} iters=${ITERS} host=$(hostname)"
+echo "[start] $(date) tasks=${TASKS} seed=${SEED} iters=${ITERS} budget=${BUDGET} steps=${STEPS} sparsity=${SPARSITY} lr=${LR} host=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 
 python -m mechrl.train.train_agent \
@@ -52,6 +59,8 @@ python -m mechrl.train.train_agent \
     --total-iterations "${ITERS}" \
     --num-steps "${STEPS}" \
     --step-budget "${BUDGET}" \
+    --sparsity-weight "${SPARSITY}" \
+    --lr "${LR}" \
     --out runs
 
 echo "[done]  $(date)"
