@@ -248,7 +248,8 @@ class CircuitEnv:
         self,
         bundles: List[TaskBundle],
         step_budget: int = 500,
-        sparsity_weight: float = 0.001,
+        faith_threshold: float = 0.8,
+        threshold_penalty: float = 3.0,
         invalid_penalty: float = -0.01,
         seed: int = 0,
     ):
@@ -256,7 +257,8 @@ class CircuitEnv:
             raise ValueError("CircuitEnv needs at least one TaskBundle.")
         self.bundles = bundles
         self.step_budget = step_budget
-        self.sparsity_weight = sparsity_weight
+        self.faith_threshold = faith_threshold
+        self.threshold_penalty = threshold_penalty
         self.invalid_penalty = invalid_penalty
         self._rng = torch.Generator().manual_seed(seed)
 
@@ -290,7 +292,8 @@ class CircuitEnv:
 
         self.reward = CircuitReward(
             self.bundle.engine,
-            sparsity_weight=self.sparsity_weight,
+            faith_threshold=self.faith_threshold,
+            threshold_penalty=self.threshold_penalty,
             invalid_penalty=self.invalid_penalty,
             step_budget=self.step_budget,
         )

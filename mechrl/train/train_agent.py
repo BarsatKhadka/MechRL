@@ -63,7 +63,8 @@ def parse_args():
     p.add_argument("--num-examples", type=int, default=None, help="override per-task example count")
     p.add_argument("--k", type=int, default=3000, help="top-K candidate edges")
     p.add_argument("--step-budget", type=int, default=400)
-    p.add_argument("--sparsity-weight", type=float, default=0.001)
+    p.add_argument("--faith-threshold", type=float, default=0.8, help="tau: faithfulness bar to clear")
+    p.add_argument("--threshold-penalty", type=float, default=3.0, help="lambda: how hard the threshold is")
     p.add_argument("--invalid-penalty", type=float, default=-0.01)
     # PPO
     p.add_argument("--total-iterations", type=int, default=500)
@@ -118,7 +119,8 @@ def main():
     env = CircuitEnv(
         bundles,
         step_budget=args.step_budget,
-        sparsity_weight=args.sparsity_weight,
+        faith_threshold=args.faith_threshold,
+        threshold_penalty=args.threshold_penalty,
         invalid_penalty=args.invalid_penalty,
         seed=args.seed,
     )

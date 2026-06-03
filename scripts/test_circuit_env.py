@@ -28,7 +28,7 @@ def main():
     STOP = K + M
 
     # Small budget so the smoke test finishes fast on CPU.
-    env = CircuitEnv([bundle], step_budget=6, sparsity_weight=0.001, seed=0)
+    env = CircuitEnv([bundle], step_budget=6, seed=0)
 
     print("\n--- Episode A: cut a few low-ranked candidates, then STOP ---")
     obs = env.reset(bundle_idx=0)

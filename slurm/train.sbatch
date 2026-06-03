@@ -14,7 +14,8 @@
 #   TASKS=IOITask|ioi|greaterthan|docstring|all   which task(s)        (default all)
 #   BUDGET=1500     max actions per episode (raises the pruning ceiling) (default 400)
 #   STEPS=...       rollout length; defaults to BUDGET so each rollout completes >=1 episode
-#   SPARSITY=0.001  per-cut bonus; nudges toward smaller circuits        (default 0.001)
+#   TAU=0.8         faithfulness threshold the circuit must clear        (default 0.8)
+#   PENALTY=3.0     how hard the threshold is (lambda)                   (default 3.0)
 #   LR=2.5e-4       learning rate                                        (default 2.5e-4)
 #   ITERS=800       PPO iterations                                       (default 500)
 #   SEED=0
@@ -46,10 +47,11 @@ SEED="${SEED:-0}"
 ITERS="${ITERS:-500}"
 BUDGET="${BUDGET:-400}"
 STEPS="${STEPS:-$BUDGET}"        # default rollout length to the budget => each rollout finishes >=1 episode (no nan metrics)
-SPARSITY="${SPARSITY:-0.001}"
+TAU="${TAU:-0.8}"
+PENALTY="${PENALTY:-3.0}"
 LR="${LR:-2.5e-4}"
 
-echo "[start] $(date) tasks=${TASKS} seed=${SEED} iters=${ITERS} budget=${BUDGET} steps=${STEPS} sparsity=${SPARSITY} lr=${LR} host=$(hostname)"
+echo "[start] $(date) tasks=${TASKS} seed=${SEED} iters=${ITERS} budget=${BUDGET} steps=${STEPS} tau=${TAU} penalty=${PENALTY} lr=${LR} host=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 
 python -m mechrl.train.train_agent \
@@ -59,7 +61,8 @@ python -m mechrl.train.train_agent \
     --total-iterations "${ITERS}" \
     --num-steps "${STEPS}" \
     --step-budget "${BUDGET}" \
-    --sparsity-weight "${SPARSITY}" \
+    --faith-threshold "${TAU}" \
+    --threshold-penalty "${PENALTY}" \
     --lr "${LR}" \
     --out runs
 
