@@ -11,10 +11,11 @@ from .utils import tokenize_plus, make_hooks_and_matrices, compute_mean_activati
 from .graph import Graph, AttentionNode
 
 
-def evaluate_graph(model: HookedTransformer, graph: Graph, dataloader: DataLoader, 
-                   metrics: Union[Callable[[Tensor],Tensor], List[Callable[[Tensor], Tensor]]], 
-                   quiet=False, intervention: Literal['patching', 'zero', 'mean','mean-positional']='patching', 
-                   intervention_dataloader: Optional[DataLoader]=None, skip_clean:bool=True) -> Union[torch.Tensor, List[torch.Tensor]]:
+def evaluate_graph(model: HookedTransformer, graph: Graph, dataloader: DataLoader,
+                   metrics: Union[Callable[[Tensor],Tensor], List[Callable[[Tensor], Tensor]]],
+                   quiet=False, intervention: Literal['patching', 'zero', 'mean','mean-positional']='patching',
+                   intervention_dataloader: Optional[DataLoader]=None, skip_clean:bool=True,
+                   corrupted_cache: Optional[list]=None) -> Union[torch.Tensor, List[torch.Tensor]]:
     """Evaluate a circuit (i.e. a graph where only some nodes are false, probably created by calling graph.apply_threshold). You probably want to prune 
         beforehand to make sure your circuit is valid.
 
@@ -191,32 +192,56 @@ def evaluate_graph(model: HookedTransformer, graph: Graph, dataloader: DataLoade
         metrics = [metrics]
     results = [[] for _ in metrics]
     
-    # and here we actually run / evaluate the model
-    dataloader = dataloader if quiet else tqdm(dataloader)
-    for clean, corrupted, label in dataloader:
-        clean_tokens, attention_mask, input_lengths, n_pos = tokenize_plus(model, clean)
-        corrupted_tokens, _, _, _ = tokenize_plus(model, corrupted)
-        
-        # fwd_hooks_corrupted adds in corrupted acts to activation_difference
-        # fwd_hooks_clean subtracts out clean acts from activation_difference
-        # activation difference is of size (batch, pos, src_nodes, hidden)
-        (fwd_hooks_corrupted, fwd_hooks_clean, _), activation_difference = make_hooks_and_matrices(model, graph, len(clean), n_pos, None)
-        
+    # and here we actually run / evaluate the model.
+    # corrupted_cache (optional): a mutable list. The corrupted forward pass produces
+    # `activation_difference = corrupted activations`, which is IDENTICAL on every call
+    # for a fixed dataset/model (it does NOT depend on the graph mask). So when a cache
+    # list is supplied we compute it once (first call) and on later calls skip both the
+    # tokenization and the corrupted forward, seeding activation_difference from the cache
+    # and running only the masked clean forward. Behaviour is byte-identical to the
+    # uncached path; only 'patching' is cached. (Used by mechrl's per-episode RL loop.)
+    can_cache = corrupted_cache is not None and intervention == 'patching'
+    iterator = dataloader if quiet else tqdm(dataloader)
+    for batch_idx, (clean, corrupted, label) in enumerate(iterator):
+        reuse = can_cache and batch_idx < len(corrupted_cache)
+        if reuse:
+            c = corrupted_cache[batch_idx]
+            clean_tokens, attention_mask, input_lengths, n_pos = (
+                c['clean_tokens'], c['attention_mask'], c['input_lengths'], c['n_pos'])
+            (_, fwd_hooks_clean, _), activation_difference = make_hooks_and_matrices(model, graph, clean_tokens.size(0), n_pos, None)
+            activation_difference += c['corrupted_acts']   # reuse cached corrupted activations
+        else:
+            clean_tokens, attention_mask, input_lengths, n_pos = tokenize_plus(model, clean)
+            corrupted_tokens, _, _, _ = tokenize_plus(model, corrupted)
+            # fwd_hooks_corrupted adds in corrupted acts to activation_difference
+            # fwd_hooks_clean subtracts out clean acts from activation_difference
+            # activation difference is of size (batch, pos, src_nodes, hidden)
+            (fwd_hooks_corrupted, fwd_hooks_clean, _), activation_difference = make_hooks_and_matrices(model, graph, len(clean), n_pos, None)
+
         input_construction_hooks = make_input_construction_hooks(activation_difference, in_graph_matrix, neuron_matrix)
         with torch.inference_mode():
-            if intervention == 'patching':
-                # We intervene by subtracting out clean and adding in corrupted activations
-                with model.hooks(fwd_hooks_corrupted):
-                    corrupted_logits = model(corrupted_tokens, attention_mask=attention_mask)
-            else:
-                # In the case of zero or mean ablation, we skip the adding in corrupted activations
-                # but in mean ablations, we need to add the mean in
-                if 'mean' in intervention:
-                    activation_difference += means
+            if not reuse:
+                if intervention == 'patching':
+                    # We intervene by subtracting out clean and adding in corrupted activations
+                    with model.hooks(fwd_hooks_corrupted):
+                        corrupted_logits = model(corrupted_tokens, attention_mask=attention_mask)
+                else:
+                    # In the case of zero or mean ablation, we skip the adding in corrupted activations
+                    # but in mean ablations, we need to add the mean in
+                    if 'mean' in intervention:
+                        activation_difference += means
+                # activation_difference now holds the corrupted activations (clean not yet
+                # subtracted) — exactly what later calls need. Cache it.
+                if can_cache:
+                    corrupted_cache.append({
+                        'clean_tokens': clean_tokens, 'attention_mask': attention_mask,
+                        'input_lengths': input_lengths, 'n_pos': n_pos,
+                        'corrupted_acts': activation_difference.clone(),
+                    })
 
             # For some metrics (e.g. accuracy or KL), we need the clean logits
             clean_logits = None if skip_clean else model(clean_tokens, attention_mask=attention_mask)
-                
+
             with model.hooks(fwd_hooks_clean + input_construction_hooks):
                 logits = model(clean_tokens, attention_mask=attention_mask)
 

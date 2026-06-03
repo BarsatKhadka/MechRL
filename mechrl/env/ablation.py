@@ -138,6 +138,13 @@ class AblationEngine:
         self._full_baseline: Optional[float] = None
         self._corrupted_baseline: Optional[float] = None
 
+        # Per-task cache of the corrupted forward pass. The corrupted activations
+        # are identical on every run_with_mask call (they don't depend on the mask),
+        # so we compute them once and reuse — skipping one of the two GPT-2 forwards
+        # per step. Built lazily on the first patching call. Reset via reset_cache().
+        self.use_corrupted_cache = True
+        self._corrupted_cache: list = []
+
     # ---- Baselines (independent of mask) ----
 
     def full_baseline(self) -> float:
@@ -190,6 +197,8 @@ class AblationEngine:
           - 'zero': cut edges replaced with zeros (off-manifold, not recommended)
         """
         self._apply_mask(mask)
+        # Only 'patching' has a mask-independent corrupted pass worth caching.
+        cache = self._corrupted_cache if (self.use_corrupted_cache and intervention == "patching") else None
         return evaluate_graph(
             self.task.model,
             self.graph,
@@ -198,7 +207,12 @@ class AblationEngine:
             intervention=intervention,
             intervention_dataloader=self.dataloader if "mean" in intervention else None,
             quiet=True,
+            corrupted_cache=cache,
         ).mean().item()
+
+    def reset_cache(self) -> None:
+        """Drop the cached corrupted pass (e.g. if the task's data changes)."""
+        self._corrupted_cache = []
 
     # ---- Convenience methods ----
 
