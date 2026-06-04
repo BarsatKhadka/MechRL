@@ -51,8 +51,9 @@ STEPS="${STEPS:-$BUDGET}"        # default rollout length to the budget => each 
 TAU="${TAU:-0.8}"
 PENALTY="${PENALTY:-3.0}"
 LR="${LR:-2.5e-4}"
+RESUME="${RESUME:-}"             # set to a run dir to continue from its latest checkpoint
 
-echo "[start] $(date) tasks=${TASKS} seed=${SEED} iters=${ITERS} budget=${BUDGET} steps=${STEPS} tau=${TAU} penalty=${PENALTY} lr=${LR} host=$(hostname)"
+echo "[start] $(date) tasks=${TASKS} seed=${SEED} iters=${ITERS} budget=${BUDGET} steps=${STEPS} tau=${TAU} penalty=${PENALTY} lr=${LR} resume=${RESUME:-none} host=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 
 python -m mechrl.train.train_agent \
@@ -62,6 +63,7 @@ python -m mechrl.train.train_agent \
     --total-iterations "${ITERS}" \
     --num-steps "${STEPS}" \
     --step-budget "${BUDGET}" \
+    ${RESUME:+--resume-from "${RESUME}"} \
     --faith-threshold "${TAU}" \
     --threshold-penalty "${PENALTY}" \
     --lr "${LR}" \
