@@ -2,9 +2,9 @@
 #SBATCH --job-name=mechrl_train
 #SBATCH --partition=gpuq
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=06:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --exclude=node049   # CONFIRMED bad: uncorrectable ECC twice. Skip it (admins haven't drained it yet).
