@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 
@@ -83,6 +84,8 @@ def parse_args():
     p.add_argument("--out", default="runs")
     p.add_argument("--save-every", type=int, default=50)
     p.add_argument("--log-every", type=int, default=1)
+    p.add_argument("--resume-from", default=None,
+                   help="path to a run dir; reload its latest policy_iter*.pt and continue")
     return p.parse_args()
 
 
@@ -95,12 +98,26 @@ def main():
     torch.manual_seed(args.seed)
 
     classes = resolve_tasks(args.tasks)
-    run_name = f"{args.tasks}_seed{args.seed}_{int(time.time())}"
-    out = Path(args.out) / run_name
-    out.mkdir(parents=True, exist_ok=True)
-    with (out / "config.json").open("w") as f:
-        json.dump(vars(args) | {"device": device, "task_classes": [c.__name__ for c in classes]}, f, indent=2)
-    print(f"[run] {run_name}  device={device}  tasks={[c.__name__ for c in classes]}", flush=True)
+
+    # ---- resume vs fresh run ----
+    start_iter = 0
+    resume_ckpt = None
+    if args.resume_from is not None:
+        out = Path(args.resume_from)
+        ckpts = sorted(out.glob("policy_iter*.pt"),
+                       key=lambda p: int(re.search(r"iter(\d+)", p.name).group(1)))
+        if not ckpts:
+            raise FileNotFoundError(f"no policy_iter*.pt in {out}")
+        resume_ckpt = ckpts[-1]
+        start_iter = int(re.search(r"iter(\d+)", resume_ckpt.name).group(1))
+        print(f"[resume] {out.name}  from {resume_ckpt.name} (iter {start_iter})", flush=True)
+    else:
+        run_name = f"{args.tasks}_seed{args.seed}_{int(time.time())}"
+        out = Path(args.out) / run_name
+        out.mkdir(parents=True, exist_ok=True)
+        with (out / "config.json").open("w") as f:
+            json.dump(vars(args) | {"device": device, "task_classes": [c.__name__ for c in classes]}, f, indent=2)
+        print(f"[run] {run_name}  device={device}  tasks={[c.__name__ for c in classes]}", flush=True)
 
     # ---- build bundles (per-task EAP-IG prefilter, cached) ----
     bundles = []
@@ -125,6 +142,9 @@ def main():
         seed=args.seed,
     )
     policy = CircuitPolicy(hidden=args.hidden)
+    if resume_ckpt is not None:
+        policy.load_state_dict(torch.load(resume_ckpt, map_location=device))
+        print(f"[resume] loaded weights from {resume_ckpt.name}", flush=True)
     cfg = PPOConfig(
         total_iterations=args.total_iterations,
         num_steps=args.num_steps,
@@ -144,6 +164,7 @@ def main():
         save_dir=out,
         save_every=args.save_every,
         metrics_path=out / "metrics.jsonl",
+        start_iter=start_iter,
     )
     print(f"\n[done] checkpoints + metrics in {out}", flush=True)
 

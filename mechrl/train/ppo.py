@@ -207,14 +207,14 @@ class PPOTrainer:
     # ---- main loop ----
 
     def train(self, log_every: int = 1, save_dir=None, save_every: int = 0,
-              metrics_path=None) -> List[dict]:
+              metrics_path=None, start_iter: int = 0) -> List[dict]:
         cfg = self.cfg
         history: List[dict] = []
         if save_dir is not None:
             Path(save_dir).mkdir(parents=True, exist_ok=True)
         mf = open(metrics_path, "a") if metrics_path is not None else None
 
-        for it in range(1, cfg.total_iterations + 1):
+        for it in range(start_iter + 1, cfg.total_iterations + 1):
             if cfg.anneal_lr:
                 frac = 1.0 - (it - 1.0) / cfg.total_iterations
                 self.opt.param_groups[0]["lr"] = frac * cfg.learning_rate
