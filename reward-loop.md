@@ -154,6 +154,39 @@ return                          =  Φ_final − Φ_start   (telescoped ΔΦ)
 
 ---
 
+## Reward v3 turning point — KL faithfulness (the metric was the problem)
+
+The whole faith>1.0 / suppressor mess came from the **metric**, not the reward.
+We used each task's natural metric (logit-diff) — a SINGLE scalar, which a circuit
+can "beat" (faith → 1.4) by cutting the negative heads. Switching faithfulness to
+**KL divergence** — `KL(full-model distribution ‖ circuit distribution)` at the
+prediction position — dissolves it:
+- KL ≥ 0, KL=0 = circuit reproduces the model. So **faith caps at 1.0** (no overshoot).
+- Cutting a suppressor makes the circuit DIVERGE from the model → KL up → faith DOWN
+  → **suppressors are kept automatically**, no hand-coded rule.
+- It's the metric ACDC uses → clean baseline comparison.
+- `faith = 1 − KL(circuit)/KL(all-cut)` (same normalization formula; full=KL(full‖full)=0).
+
+**Measured on IOI (test_kl_faith.py):**
+- KL full baseline 0.0; KL all-cut baseline 4.65.
+- **KL-faith top-3k = 0.95** (vs logit-diff 0.72). HIGHER, because the 0.72 was
+  artificially depressed by the suppressor — the full model *also* suppresses, so
+  the top-3k matches the model 95% in KL terms. **K=3000 is plenty; no bigger K needed.**
+- **The flip:** cut a10.h7 → KL-faith 0.95→0.92 (DROPS, kept) vs logit-diff 0.72→0.96
+  (rises, cut). The negative-head problem is gone structurally.
+
+**Why this is the right objective:** "smallest subset whose OUTPUT DISTRIBUTION
+matches the model (KL-faith → ~0.95), keeping movers AND suppressors, cutting only
+redundancy" = the *model's* circuit (what published-circuit validation wants),
+not the best *task* subnetwork. Implemented in `ablation.py` (metric_type="kl",
+caches the full-model logits once per task) + `circuit_env.py` (TaskBundle uses it).
+
+**Implication for the reward:** the threshold reward (v2) now works correctly with
+KL — no overshoot to handle. Set τ ≈ 0.9 (just under the 0.95 reference): prune while
+KL-faith stays ≥ τ. No band-cap, no suppressor rule needed.
+
+---
+
 ## Open problem
 
 The agent isn't learning to prune deep. Two intertwined causes:

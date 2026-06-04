@@ -199,7 +199,9 @@ class TaskBundle:
     ) -> "TaskBundle":
         """Run the one-time expensive setup for a task."""
         graph = build_graph(task.model)
-        engine = AblationEngine(task, graph)
+        # KL faithfulness: reproduce the full model's output distribution (caps at
+        # 1.0, keeps suppressors — no faith>1.0 overshoot). See reward-loop.md.
+        engine = AblationEngine(task, graph, metric_type="kl")
 
         pref = Prefilter(task, graph, ig_steps=ig_steps)
         pref.compute(batch_size=prefilter_batch_size)

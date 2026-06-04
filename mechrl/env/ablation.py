@@ -16,12 +16,38 @@ from functools import partial
 from typing import Callable, List, Optional
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from eap.evaluate import evaluate_baseline, evaluate_graph
 from eap.graph import Graph
+from eap.utils import tokenize_plus
 
 from mechrl.tasks.base import Task, TaskBatch
+
+
+def _make_kl_metric(full_logits: torch.Tensor) -> Callable:
+    """Faithfulness metric = KL( full-model distribution || circuit distribution )
+    at the prediction position. 0 = circuit reproduces the model exactly; grows as
+    they diverge; never negative (so faithfulness caps at 1.0 — no overshoot).
+
+    full_logits : [batch, seq, vocab] — the FULL model's clean-prompt logits,
+    precomputed once per task (fixed). Cutting a suppressor makes the circuit's
+    distribution diverge from this -> KL up -> faith down -> suppressors are kept.
+
+    Single-batch engine (one DataLoader batch covering all examples).
+    """
+    def kl_metric(logits, clean_logits, input_length, labels):
+        bs = logits.size(0)
+        idx = torch.arange(bs, device=logits.device)
+        pos = (input_length - 1).to(logits.device).long()          # prediction position (right-padded)
+        circ = logits[idx, pos].float()                            # [bs, vocab]
+        ref = full_logits[:bs].to(logits.device)[idx, pos].float() # [bs, vocab]
+        logp_circ = F.log_softmax(circ, dim=-1)
+        logp_ref = F.log_softmax(ref, dim=-1)
+        kl = (logp_ref.exp() * (logp_ref - logp_circ)).sum(-1)     # KL(ref || circuit) per example
+        return kl.mean()
+    return kl_metric
 
 
 # Reuse the same collate / dataset format used by the prefilter
@@ -95,7 +121,7 @@ class AblationEngine:
     """
 
     def __init__(self, task: Task, graph: Graph, batch_size: Optional[int] = None,
-                 use_task_metric: bool = True):
+                 use_task_metric: bool = True, metric_type: Optional[str] = None):
         """
         Parameters
         ----------
@@ -128,8 +154,14 @@ class AblationEngine:
         self.edge_list = list(graph.edges.values())
         self.n_edges = len(self.edge_list)
 
-        # Metric: either task's natural metric or fallback logit-diff
-        if use_task_metric:
+        # Metric. metric_type="kl" -> KL faithfulness (reproduce the full model's
+        # distribution; caps at 1.0, keeps suppressors). Otherwise fall back to the
+        # task's natural metric (logit-diff etc.) or plain logit-diff.
+        self.metric_type = metric_type
+        if metric_type == "kl":
+            self._full_logits = self._precompute_full_logits()
+            self.metric = _make_kl_metric(self._full_logits)
+        elif use_task_metric:
             self.metric = _wrap_task_metric(task)
         else:
             self.metric = partial(_logit_diff, loss=False, mean=True)
@@ -144,6 +176,18 @@ class AblationEngine:
         # per step. Built lazily on the first patching call. Reset via reset_cache().
         self.use_corrupted_cache = True
         self._corrupted_cache: list = []
+
+    def _precompute_full_logits(self) -> torch.Tensor:
+        """Run the FULL model (no patching) on the clean prompts once and cache its
+        logits — the reference distribution for the KL metric. Fixed per task, so
+        this never needs recomputing. Single-batch engine -> one tensor."""
+        model = self.task.model
+        for clean, corrupted, label in self.dataloader:
+            clean_tokens, attn, _, _ = tokenize_plus(model, clean)
+            with torch.inference_mode():
+                logits = model(clean_tokens, attention_mask=attn)
+            return logits.detach()
+        raise RuntimeError("empty dataloader; cannot precompute full logits")
 
     # ---- Baselines (independent of mask) ----
 
