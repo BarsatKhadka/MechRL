@@ -12,8 +12,10 @@
 #SBATCH --partition=main
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
+# NOTE: this cluster does NOT use --gres for GPUs; each compute node has one
+# GPU that is allocated automatically with the node (matches the lab's DDP
+# example, which has no --gres line). The python cuda check below confirms it.
 #SBATCH --time=04:00:00
 #SBATCH --exclude=c1,c2            # leave desk machines free; prefer c3/c4
 #SBATCH --output=acdc_cic.%j.out
