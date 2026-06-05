@@ -67,6 +67,18 @@ class BatchCutPolicy(nn.Module):
         self.size_head = _mlp([hidden, hidden, 1 + len(self.batch_sizes)])
         self.value_head = _mlp([hidden, hidden, 1])
 
+        # Initialize the size head to mimic the flat policy's healthy start:
+        # single-cut (N=batch_sizes[0]) DOMINANT, STOP RARE, big batches rare. In
+        # the flat policy STOP was 1-of-~3151 actions -> ~never fired at init, so the
+        # agent EXPLORED cutting first and LEARNED to stop wisely. Here STOP is 1-of-5,
+        # which would make an untrained agent quit after ~5 steps (and do chaotic
+        # random big-batch cuts). Biasing the init recovers the flat behavior; the
+        # agent still learns to STOP and to batch bigger over training.
+        with torch.no_grad():
+            self.size_head[-1].bias.zero_()
+            self.size_head[-1].bias[0] = -5.0          # STOP: ~never at init
+            self.size_head[-1].bias[1] = 2.0           # smallest N (single cut): favored
+
     # ---- shared trunk ----
 
     def _context_and_edge_logits(self, obs: Dict[str, torch.Tensor]):
