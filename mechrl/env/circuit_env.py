@@ -305,11 +305,16 @@ class CircuitEnv:
 
         return self._observation()
 
-    def step(self, action: int) -> Tuple[Dict[str, torch.Tensor], float, bool, dict]:
+    def step(self, action) -> Tuple[Dict[str, torch.Tensor], float, bool, dict]:
         """Apply one action. Returns (obs, reward, done, info).
 
-        action layout:  0..K-1 = CUT edge,  K..K+M-1 = KILL parent,  K+M = STOP
+        Two action formats are accepted:
+          - int (legacy flat):  0..K-1 = CUT edge, K..K+M-1 = KILL parent, K+M = STOP
+          - dict (batch-cut):   {"type":"stop"} or
+                                {"type":"batch","size_idx":int,"edges":[cand-local idxs]}
         """
+        if isinstance(action, dict):
+            return self._step_batch(action)
         if self.done:
             raise RuntimeError("step() called on a finished episode; call reset().")
         self.steps += 1
@@ -358,6 +363,46 @@ class CircuitEnv:
             self.done = True
             reason = "budget"
 
+        info = {"reason": reason, "faith": self.reward.current_faith,
+                "kept": int(self.alive.sum().item()), "steps": self.steps,
+                "valid": valid, "n_cut_this_step": n_cut}
+        return self._observation(), reward, self.done, info
+
+    def _step_batch(self, action: dict) -> Tuple[Dict[str, torch.Tensor], float, bool, dict]:
+        """Apply a batch-cut / stop action (see BatchCutPolicy).
+
+        A batch cuts several candidate edges, then scores faith ONCE — so the
+        whole batch costs a single GPT-2 forward (the reward's faith eval).
+        """
+        if self.done:
+            raise RuntimeError("step() called on a finished episode; call reset().")
+        self.steps += 1
+
+        if action["type"] == "stop":
+            reward = self.reward.terminal(self.mask)
+            self.done = True
+            info = {"reason": "stop", "faith": self.reward.current_faith,
+                    "kept": int(self.alive.sum().item()), "steps": self.steps,
+                    "valid": True, "n_cut_this_step": 0}
+            return self._observation(), reward, True, info
+
+        # Apply all picked cuts (candidate-local indices), then one faith eval.
+        faith_pre = float(self.reward.current_faith)
+        n_cut = 0
+        for idx in action["edges"]:
+            if self.alive[idx]:
+                self.alive[idx] = False
+                self.mask[self.bundle.cand_edge_idx[idx]] = False
+                n_cut += 1
+        valid = n_cut > 0
+        reward = self.reward.step(self.mask, valid_action=valid)
+        self._last_faith_delta = float(self.reward.current_faith) - faith_pre
+
+        reason = "batch" if valid else "invalid"
+        if self.steps >= self.step_budget:
+            reward = reward + self.reward.terminal(self.mask)
+            self.done = True
+            reason = "budget"
         info = {"reason": reason, "faith": self.reward.current_faith,
                 "kept": int(self.alive.sum().item()), "steps": self.steps,
                 "valid": valid, "n_cut_this_step": n_cut}

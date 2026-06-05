@@ -25,6 +25,7 @@ import torch
 from mechrl.tasks import IOITask
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.agent import CircuitPolicy
+from mechrl.agent.batch_policy import BatchCutPolicy
 
 TASKS = {"IOITask": IOITask}
 
@@ -79,7 +80,12 @@ def main():
         invalid_penalty=cfg.get("invalid_penalty", -0.01),
         seed=cfg.get("seed", 0),
     )
-    policy = CircuitPolicy(hidden=cfg.get("hidden", 128)).to(device)
+    is_batch = cfg.get("policy", "flat") == "batch"
+    if is_batch:
+        policy = BatchCutPolicy(hidden=cfg.get("hidden", 128),
+                                batch_sizes=tuple(cfg.get("batch_sizes", [1, 3, 10, 30, 100]))).to(device)
+    else:
+        policy = CircuitPolicy(hidden=cfg.get("hidden", 128)).to(device)
     policy.load_state_dict(torch.load(ckpt, map_location=device))
     policy.eval()
 
@@ -88,8 +94,11 @@ def main():
     steps, last_info = 0, {}
     with torch.no_grad():
         while not env.done:
-            logits, _ = policy(move_obs(obs, device))
-            action = int(torch.argmax(logits).item())
+            if is_batch:
+                action, _, _, _ = policy.act(move_obs(obs, device), greedy=True)
+            else:
+                logits, _ = policy(move_obs(obs, device))
+                action = int(torch.argmax(logits).item())
             obs, _, done, last_info = env.step(action)
             steps += 1
     print(f"[extract] episode ended: reason={last_info.get('reason')} steps={steps}", flush=True)

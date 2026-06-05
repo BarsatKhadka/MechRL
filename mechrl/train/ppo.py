@@ -160,9 +160,12 @@ class PPOTrainer:
                 # recompute logp/entropy/value per stored step (variable action dim)
                 newlogp, entropy, newval = [], [], []
                 for i in mb:
-                    lp, ent, v = self.policy.evaluate(
-                        b_obs[i], torch.tensor(b_actions[i], device=self.device)
-                    )
+                    act = b_actions[i]
+                    # batch-cut actions are dicts (handled raw by evaluate); legacy
+                    # flat actions are ints (need tensorizing for Categorical).
+                    if not isinstance(act, dict):
+                        act = torch.tensor(act, device=self.device)
+                    lp, ent, v = self.policy.evaluate(b_obs[i], act)
                     newlogp.append(lp); entropy.append(ent); newval.append(v)
                 newlogp = torch.stack(newlogp)
                 entropy = torch.stack(entropy)

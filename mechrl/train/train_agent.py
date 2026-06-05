@@ -34,6 +34,7 @@ from mechrl.tasks import (
 )
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.agent import CircuitPolicy
+from mechrl.agent.batch_policy import BatchCutPolicy
 from mechrl.train import PPOConfig, PPOTrainer
 
 
@@ -78,6 +79,10 @@ def parse_args():
     p.add_argument("--ent-coef", type=float, default=0.01)
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--hidden", type=int, default=128)
+    p.add_argument("--policy", choices=["flat", "batch"], default="flat",
+                   help="flat = legacy single-cut/kill/stop; batch = autoregressive batch-cut")
+    p.add_argument("--batch-sizes", type=int, nargs="+", default=[1, 3, 10, 30, 100],
+                   help="batch-cut size options (only used with --policy batch)")
     # infra
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda")
@@ -141,7 +146,11 @@ def main():
         invalid_penalty=args.invalid_penalty,
         seed=args.seed,
     )
-    policy = CircuitPolicy(hidden=args.hidden)
+    if args.policy == "batch":
+        policy = BatchCutPolicy(hidden=args.hidden, batch_sizes=tuple(args.batch_sizes))
+        print(f"[policy] BatchCutPolicy batch_sizes={args.batch_sizes}", flush=True)
+    else:
+        policy = CircuitPolicy(hidden=args.hidden)
     if resume_ckpt is not None:
         policy.load_state_dict(torch.load(resume_ckpt, map_location=device))
         print(f"[resume] loaded weights from {resume_ckpt.name}", flush=True)
