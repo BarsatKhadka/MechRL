@@ -156,46 +156,45 @@ class PPOTrainer:
             np.random.shuffle(inds)
             for start in range(0, T, mb_size):
                 mb = inds[start:start + mb_size]
+                n = len(mb)
 
-                # recompute logp/entropy/value per stored step (variable action dim)
-                newlogp, entropy, newval = [], [], []
-                for i in mb:
-                    act = b_actions[i]
-                    # batch-cut actions are dicts (handled raw by evaluate); legacy
-                    # flat actions are ints (need tensorizing for Categorical).
-                    if not isinstance(act, dict):
-                        act = torch.tensor(act, device=self.device)
-                    lp, ent, v = self.policy.evaluate(b_obs[i], act)
-                    newlogp.append(lp); entropy.append(ent); newval.append(v)
-                newlogp = torch.stack(newlogp)
-                entropy = torch.stack(entropy)
-                newval = torch.stack(newval)
-
-                logratio = newlogp - b_logprobs[torch.as_tensor(mb)]
-                ratio = logratio.exp()
-                with torch.no_grad():
-                    approx_kl = ((ratio - 1) - logratio).mean().item()
-
+                # advantage normalization across the minibatch (no forward needed)
                 mb_adv = b_adv[torch.as_tensor(mb)]
                 if cfg.norm_adv and mb_adv.numel() > 1:
                     mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
-                # clipped policy loss
-                pg1 = -mb_adv * ratio
-                pg2 = -mb_adv * torch.clamp(ratio, 1 - cfg.clip_coef, 1 + cfg.clip_coef)
-                pg_loss = torch.max(pg1, pg2).mean()
-
-                # value loss
-                v_loss = 0.5 * ((newval - b_ret[torch.as_tensor(mb)]) ** 2).mean()
-                ent_loss = entropy.mean()
-                loss = pg_loss - cfg.ent_coef * ent_loss + cfg.vf_coef * v_loss
-
+                # Per-sample forward + backward with gradient ACCUMULATION. The batch
+                # policy's evaluate() replays N autoregressive forwards per step, so
+                # stacking a whole minibatch before one backward() holds N*mb_size
+                # graphs at once -> OOMs on small GPUs. Doing one sample at a time and
+                # dividing the loss by n gives the identical gradient (mean over the
+                # minibatch) while peak memory stays at ONE step's graph.
                 self.opt.zero_grad()
-                loss.backward()
+                pg_acc = v_acc = ent_acc = kl_acc = 0.0
+                for j, i in enumerate(mb):
+                    act = b_actions[i]
+                    # batch-cut actions are dicts; legacy flat actions are ints.
+                    if not isinstance(act, dict):
+                        act = torch.tensor(act, device=self.device)
+                    lp, ent, v = self.policy.evaluate(b_obs[i], act)
+
+                    logratio = lp - b_logprobs[i]
+                    ratio = logratio.exp()
+                    adv_i = mb_adv[j]
+                    pg = torch.max(-adv_i * ratio,
+                                   -adv_i * torch.clamp(ratio, 1 - cfg.clip_coef, 1 + cfg.clip_coef))
+                    v_loss = 0.5 * (v - b_ret[i]) ** 2
+                    loss = (pg - cfg.ent_coef * ent + cfg.vf_coef * v_loss) / n
+                    loss.backward()
+                    with torch.no_grad():
+                        pg_acc += float(pg); v_acc += float(v_loss); ent_acc += float(ent)
+                        kl_acc += float((ratio - 1) - logratio)
+
                 nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
                 self.opt.step()
-                last = dict(pg_loss=pg_loss.item(), v_loss=v_loss.item(),
-                            entropy=ent_loss.item(), approx_kl=approx_kl)
+                approx_kl = kl_acc / n
+                last = dict(pg_loss=pg_acc / n, v_loss=v_acc / n,
+                            entropy=ent_acc / n, approx_kl=approx_kl)
 
             if cfg.target_kl is not None and approx_kl > cfg.target_kl:
                 break
