@@ -123,6 +123,7 @@ def run_acdc(engine, graph, tau, smoke_receivers=0, log_every=500, verbose=True)
                       f"faith={faith_of(cur_kl):.4f} ({time.time()-t0:.0f}s)", flush=True)
 
     final_edges = int(mask.sum().item())
+    final_names = [edges[i].name for i in mask.nonzero(as_tuple=True)[0].tolist()]
     return {
         "tau": tau,
         "final_edges": final_edges,
@@ -134,6 +135,7 @@ def run_acdc(engine, graph, tau, smoke_receivers=0, log_every=500, verbose=True)
         "n_edges_total": n_edges,
         "elapsed_sec": time.time() - t0,
         "curve": curve,                            # [(edges, faith, passes), ...]
+        "edges": final_names,                      # the circuit, for overlap tests
     }
 
 
@@ -172,6 +174,16 @@ def main():
     }
     out.write_text(json.dumps(payload, indent=2))
     print(f"\nSaved -> {out}", flush=True)
+
+    # Also write one circuit file per threshold (edges by name) for the validity
+    # battery's --acdc overlap test (evaluate_circuit.py).
+    for r in results:
+        cf = out.parent / f"acdc_circuit_tau{r['tau']}.json"
+        cf.write_text(json.dumps({
+            "source": "acdc", "tau": r["tau"], "n_edges": r["final_edges"],
+            "faith": r["final_faith"], "edges": r["edges"],
+        }, indent=2))
+    print(f"Per-threshold circuit files -> {out.parent}/acdc_circuit_tau*.json", flush=True)
 
     print("\n=== SUMMARY (size vs faith) ===", flush=True)
     print(f"{'tau':>10} | {'edges':>7} | {'faith':>7} | {'fwd passes':>10}", flush=True)
