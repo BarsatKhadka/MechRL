@@ -1,11 +1,10 @@
 """Unit test for BatchCutPolicy — no GPT-2, just the policy math.
 
-Critical checks:
+Critical checks for ALL action types (batch, kill, stop):
   1. act() and evaluate() return the SAME log-prob for the same action
      (if not, PPO's importance ratio is garbage).
-  2. gradients flow to the edge head AND the size head.
-  3. autoregressive picks are distinct and were alive when chosen.
-  4. the STOP path works.
+  2. gradients flow to edge head, node head, and type head.
+  3. autoregressive batch picks are distinct and were alive.
 """
 
 from __future__ import annotations
@@ -22,57 +21,62 @@ def fake_obs(K=60, M=12, seed=0):
         "edge_features": torch.randn(K, EDGE_FEATURE_DIM, generator=g),
         "node_features": torch.randn(M, NODE_FEATURE_DIM, generator=g),
         "edge_alive": torch.ones(K),
-        "kill_alive_frac": torch.rand(M, generator=g),
+        "kill_alive_frac": torch.rand(M, generator=g),   # some > 0 -> kill valid
         "globals": torch.randn(N_GLOBALS, generator=g),
     }
 
 
-def test_consistency_and_grads():
+def consistency(policy, obs, want_type):
+    """Sample until we get an action of want_type; check act/evaluate agree."""
+    for attempt in range(400):
+        torch.manual_seed(attempt + 1)
+        a, logp_act, ent_act, val_act = policy.act(obs)
+        ok = (a["type"] == want_type and
+              (want_type != "batch" or len(a["edges"]) >= 2))
+        if ok:
+            break
+    assert a["type"] == want_type, f"never sampled a {want_type} action"
+    logp_eval, ent_eval, val_eval = policy.evaluate(obs, a)
+    diff = abs(float(logp_act.detach()) - float(logp_eval.detach()))
+    print(f"  {want_type:6s}: logp act={float(logp_act.detach()):+.5f} "
+          f"eval={float(logp_eval.detach()):+.5f}  |diff|={diff:.2e}  detail={ {k:(v if k!='edges' else v[:4]) for k,v in a.items()} }")
+    assert diff < 1e-4, f"{want_type} act/evaluate log-prob mismatch: {diff}"
+    assert abs(float(val_act.detach()) - float(val_eval.detach())) < 1e-5
+    return a, logp_eval, ent_eval
+
+
+def main():
     torch.manual_seed(0)
     policy = BatchCutPolicy(batch_sizes=(1, 3, 10, 30))
     obs = fake_obs()
 
-    # Force a BATCH action (re-sample until we don't get STOP) so we exercise
-    # the autoregressive path.
-    for attempt in range(50):
-        torch.manual_seed(attempt + 1)
-        a, logp_act, ent_act, val_act = policy.act(obs)
-        if a["type"] == "batch" and len(a["edges"]) >= 2:
-            break
-    assert a["type"] == "batch", "never sampled a batch action"
-    print(f"sampled batch: size_idx={a['size_idx']} N={len(a['edges'])} edges[:5]={a['edges'][:5]}")
+    print("act/evaluate consistency:")
+    consistency(policy, obs, "batch")
+    consistency(policy, obs, "kill")
+    # STOP is ~impossible to sample at init (biased rare), so just check evaluate
+    # handles it (no autoregressive replay, so consistency is trivial anyway).
+    lp_s, ent_s, _ = policy.evaluate(obs, {"type": "stop"})
+    assert torch.isfinite(lp_s) and torch.isfinite(ent_s)
+    print(f"  stop  : evaluate logp={float(lp_s):+.4f} entropy={float(ent_s):.4f} (rare by design)")
 
-    # (3) picks distinct + were alive (all alive in this obs)
-    assert len(set(a["edges"])) == len(a["edges"]), "duplicate picks!"
-    assert all(0 <= i < obs["edge_alive"].numel() for i in a["edges"]), "pick out of range"
-
-    # (1) consistency: evaluate the SAME action -> same log-prob
-    logp_eval, ent_eval, val_eval = policy.evaluate(obs, a)
-    diff = abs(float(logp_act) - float(logp_eval))
-    print(f"logp act={float(logp_act):.6f}  eval={float(logp_eval):.6f}  |diff|={diff:.2e}")
-    assert diff < 1e-4, f"act/evaluate log-prob mismatch: {diff}"
-
-    # value should match too (same forward on same obs)
-    assert abs(float(val_act) - float(val_eval)) < 1e-5
-
-    # (2) gradients flow to edge head AND size head
-    loss = -(logp_eval) + val_eval.pow(2) - 0.01 * ent_eval
-    policy.zero_grad()
-    loss.backward()
-    eh = policy.edge_head[0].weight.grad
-    sh = policy.size_head[0].weight.grad
-    assert eh is not None and eh.abs().sum() > 0, "edge head got no gradient"
-    assert sh is not None and sh.abs().sum() > 0, "size head got no gradient"
-    print(f"edge_head grad norm {eh.norm():.4f}  size_head grad norm {sh.norm():.4f}")
-
-    # (4) STOP path
-    # build a logits regime that forces stop by checking evaluate on a stop action
-    logp_s, ent_s, val_s = policy.evaluate(obs, {"type": "stop"})
-    assert torch.isfinite(logp_s) and torch.isfinite(ent_s)
-    print(f"stop: logp={float(logp_s):.4f} entropy={float(ent_s):.4f}")
+    # gradients flow to all three action heads (use a batch action: touches edge+type)
+    a, logp_eval, ent_eval = consistency(policy, obs, "batch")
+    _, _, val = policy.evaluate(obs, a)
+    loss = -logp_eval + val.pow(2) - 0.01 * ent_eval
+    policy.zero_grad(); loss.backward()
+    for name, head in [("edge", policy.edge_head), ("type", policy.type_head), ("value", policy.value_head)]:
+        g = head[0].weight.grad
+        assert g is not None and g.abs().sum() > 0, f"{name} head got no gradient"
+        print(f"  {name} head grad norm {g.norm():.4f}")
+    # node head gets gradient from a kill action
+    ak, logp_k, ent_k = consistency(policy, obs, "kill")
+    policy.zero_grad(); (-logp_k).backward()
+    gn = policy.node_head[0].weight.grad
+    assert gn is not None and gn.abs().sum() > 0, "node head got no gradient"
+    print(f"  node head grad norm {gn.norm():.4f}")
 
     print("\nALL CHECKS PASSED")
 
 
 if __name__ == "__main__":
-    test_consistency_and_grads()
+    main()

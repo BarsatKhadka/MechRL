@@ -1,26 +1,23 @@
-"""BatchCutPolicy — actor-critic with a learned, autoregressive batch-cut action.
+"""BatchCutPolicy — actor-critic with batch-cut AND kill-parent actions.
 
-Replaces the flat (single-cut / kill / stop) action space with:
+Per step the agent chooses one of:
 
-    action = STOP                       end the episode
-           | BATCH(size_idx, [edges])   cut these edges (chosen autoregressively)
+    action = STOP                         end the episode
+           | BATCH(size_idx, [edges])     cut N edges, chosen AUTOREGRESSIVELY
+           | KILL(node)                   cut ALL of one parent node's alive edges
 
-The agent makes two coupled decisions per step (factored action):
-  1. SIZE head -> pick {STOP, N=batch_sizes[0], N=batch_sizes[1], ...}
-  2. EDGE head -> if not STOP, sample N edges ONE AT A TIME, re-scoring between
-     picks (autoregressive). Marking a pick "cut" flips its alive-bit, which
-     shifts the context the edge head reads -> the next pick conditions on it.
-     This is what lets the agent learn "don't cut B right after A" (OR-gate /
-     backup-head coordination). See reward-loop / design notes.
+- BATCH is the selective bulk cut (Problem 1: autoregressive re-scoring between
+  picks dodges OR-gate pairs; Problem 2: sampled -> differentiable joint log-prob).
+- KILL is the blunt whole-node cut, kept because it's the workhorse that drove the
+  flat agent down fast (great EARLY for clearly-dead nodes; the agent learns to
+  stop using it once nodes have mixed important/redundant edges).
+- STOP, the batch sizes, and KILL are one factored "type" head; BATCH then samples
+  edges, KILL then samples a node.
 
-Why autoregressive solves both problems:
-  - Problem 1 (staleness): picks see each other, so redundant pairs can be split.
-  - Problem 2 (trainability): each pick is SAMPLED, so the whole batch has a
-    real differentiable log-prob (sum of per-pick + the size choice). A hard
-    top-N sort would be deterministic -> zero gradient -> ranking never learns.
+Type head index layout:  0 = STOP, 1..B = batch_sizes[0..B-1], B+1 = KILL.
 
-Cost note: the N re-scorings are cheap POLICY forwards (no GPT-2). The single
-expensive GPT-2 faith eval happens once per step, in the env, after the batch.
+Cost: the N re-scorings (BATCH) are cheap policy forwards; the one expensive GPT-2
+faith eval happens once per step in the env.
 """
 
 from __future__ import annotations
@@ -58,143 +55,166 @@ class BatchCutPolicy(nn.Module):
         super().__init__()
         self.hidden = hidden
         self.batch_sizes = list(batch_sizes)
+        self.n_sizes = len(self.batch_sizes)
+        self.kill_idx = 1 + self.n_sizes              # last type index = KILL
+        self.n_types = 2 + self.n_sizes               # STOP + sizes + KILL
+
         self.edge_embed = _mlp([edge_dim + 1, hidden, hidden])
         self.node_embed = _mlp([node_dim + 1, hidden, hidden])
         ctx_in = 2 * hidden + 2 * hidden + n_globals
         self.context = _mlp([ctx_in, hidden, hidden])
-        self.edge_head = _mlp([hidden + hidden, hidden, 1])
-        # size head: index 0 = STOP, indices 1..B = batch_sizes[0..B-1]
-        self.size_head = _mlp([hidden, hidden, 1 + len(self.batch_sizes)])
+        self.edge_head = _mlp([hidden + hidden, hidden, 1])   # BATCH edge scores
+        self.node_head = _mlp([hidden + hidden, hidden, 1])   # KILL node scores
+        self.type_head = _mlp([hidden, hidden, self.n_types])
         self.value_head = _mlp([hidden, hidden, 1])
 
-        # Initialize the size head to mimic the flat policy's healthy start:
-        # single-cut (N=batch_sizes[0]) DOMINANT, STOP RARE, big batches rare. In
-        # the flat policy STOP was 1-of-~3151 actions -> ~never fired at init, so the
-        # agent EXPLORED cutting first and LEARNED to stop wisely. Here STOP is 1-of-5,
-        # which would make an untrained agent quit after ~5 steps (and do chaotic
-        # random big-batch cuts). Biasing the init recovers the flat behavior; the
-        # agent still learns to STOP and to batch bigger over training.
+        # Init the type head to mimic the flat policy's healthy start: single-cut
+        # (N=batch_sizes[0]) DOMINANT, STOP RARE; bigger batches and KILL explored
+        # but not dominant (learned up over training, as KILL was in the flat run).
         with torch.no_grad():
-            self.size_head[-1].bias.zero_()
-            self.size_head[-1].bias[0] = -5.0          # STOP: ~never at init
-            self.size_head[-1].bias[1] = 2.0           # smallest N (single cut): favored
+            self.type_head[-1].bias.zero_()
+            self.type_head[-1].bias[0] = -5.0         # STOP: ~never at init
+            self.type_head[-1].bias[1] = 2.0          # smallest N (single cut): favored
 
-    # ---- shared trunk ----
+    # ---- trunk + heads ----
 
-    def _context_and_edge_logits(self, obs: Dict[str, torch.Tensor]):
+    def _embed(self, obs):
         ef = obs["edge_features"]
         nf = obs["node_features"]
         ea = obs["edge_alive"].unsqueeze(-1)
         naf = obs["kill_alive_frac"].unsqueeze(-1)
         g = obs["globals"]
-
         e = self.edge_embed(torch.cat([ef, ea], dim=-1))   # [K, H]
         n = self.node_embed(torch.cat([nf, naf], dim=-1))  # [M, H]
         pooled = torch.cat([e.mean(0), e.amax(0), n.mean(0), n.amax(0), g], dim=-1)
-        ctx = self.context(pooled)                         # [H]
+        ctx = self.context(pooled)
+        return ctx, e, n
 
+    def _edge_logits(self, obs, ctx, e):
         ctx_e = ctx.unsqueeze(0).expand(e.size(0), -1)
-        edge_logits = self.edge_head(torch.cat([e, ctx_e], dim=-1)).squeeze(-1)  # [K]
-        alive = obs["edge_alive"] > 0.5
-        edge_logits = edge_logits.masked_fill(~alive, MASK_VALUE)
-        return ctx, edge_logits
+        el = self.edge_head(torch.cat([e, ctx_e], dim=-1)).squeeze(-1)
+        return el.masked_fill(~(obs["edge_alive"] > 0.5), MASK_VALUE)
+
+    def _node_logits(self, obs, ctx, n):
+        ctx_n = ctx.unsqueeze(0).expand(n.size(0), -1)
+        nl = self.node_head(torch.cat([n, ctx_n], dim=-1)).squeeze(-1)
+        return nl.masked_fill(~(obs["kill_alive_frac"] > 0.0), MASK_VALUE)
+
+    def _type_logits(self, obs, ctx):
+        tl = self.type_head(ctx)                            # [n_types]
+        mask = torch.ones_like(tl, dtype=torch.bool)
+        if not bool((obs["edge_alive"] > 0.5).any()):       # no alive edges -> no cut
+            mask[1:1 + self.n_sizes] = False
+        if not bool((obs["kill_alive_frac"] > 0.0).any()):  # no killable node
+            mask[self.kill_idx] = False
+        return tl.masked_fill(~mask, MASK_VALUE)
 
     def forward(self, obs):
-        ctx, edge_logits = self._context_and_edge_logits(obs)
-        size_logits = self.size_head(ctx)                  # [1 + B]
-        value = self.value_head(ctx).squeeze(-1)
-        return edge_logits, size_logits, value
+        ctx, e, n = self._embed(obs)
+        return (self._edge_logits(obs, ctx, e),
+                self._node_logits(obs, ctx, n),
+                self._type_logits(obs, ctx),
+                self.value_head(ctx).squeeze(-1))
 
     def get_value(self, obs):
-        return self.forward(obs)[2]
+        return self.forward(obs)[3]
 
-    # ---- obs simulation during autoregressive sampling (NO GPT-2) ----
+    # ---- obs simulation during autoregressive batch sampling (no GPT-2) ----
 
     def _clone_dynamic(self, obs):
-        """Copy only the tensors we mutate while sampling a batch."""
         o = dict(obs)
         o["edge_alive"] = obs["edge_alive"].clone()
         o["globals"] = obs["globals"].clone()
         return o
 
     def _mark_cut(self, obs, idx: int):
-        """Flip an edge to cut and refresh the alive-fraction global (what the
-        re-score reads). Faith globals are deliberately NOT updated — within a
-        batch we predict from the cut pattern, we don't re-measure faith."""
         obs["edge_alive"][idx] = 0.0
         obs["globals"][ALIVE_GLOBAL_IDX] = obs["edge_alive"].mean()
 
-    # ---- acting (rollout) ----
+    # ---- acting ----
 
     def act(self, obs, greedy: bool = False):
-        """Sample (or, if greedy, argmax) a composite action.
-        Returns (action_dict, logp, entropy, value).
+        """Sample (or argmax) a composite action. Returns (action, logp, entropy, value).
 
-        action_dict is one of:
-          {"type": "stop"}
-          {"type": "batch", "size_idx": int, "edges": [candidate-local idxs]}
-
-        greedy=True (deterministic) is used to EXTRACT the circuit the policy
-        commits to — argmax the size and each edge pick instead of sampling.
+        action: {"type":"stop"} | {"type":"batch","size_idx",..,"edges":[..]}
+                | {"type":"kill","node":idx}
         """
-        edge_logits, size_logits, value = self.forward(obs)
-        size_dist = Categorical(logits=size_logits)
-        sc = size_logits.argmax() if greedy else size_dist.sample()
-        logp = size_dist.log_prob(sc)
-        ent_size = size_dist.entropy()
-        sci = int(sc.item())
+        ctx, e, n = self._embed(obs)
+        type_logits = self._type_logits(obs, ctx)
+        node_logits = self._node_logits(obs, ctx, n)
+        value = self.value_head(ctx).squeeze(-1)
 
-        if sci == 0:
-            return {"type": "stop"}, logp, ent_size, value
+        type_dist = Categorical(logits=type_logits)
+        ti = type_logits.argmax() if greedy else type_dist.sample()
+        logp = type_dist.log_prob(ti)
+        entropy = type_dist.entropy()
+        t = int(ti.item())
 
-        n_target = self.batch_sizes[sci - 1]
+        if t == 0:
+            return {"type": "stop"}, logp, entropy, value
+
+        if t == self.kill_idx:
+            node_dist = Categorical(logits=node_logits)
+            node = node_logits.argmax() if greedy else node_dist.sample()
+            logp = logp + node_dist.log_prob(node)
+            entropy = entropy + node_dist.entropy()
+            return {"type": "kill", "node": int(node.item())}, logp, entropy, value
+
+        # BATCH: autoregressively sample N edges, re-scoring between picks.
+        n_target = self.batch_sizes[t - 1]
         work = self._clone_dynamic(obs)
         edges: List[int] = []
         edge_ents: List[torch.Tensor] = []
         for _ in range(n_target):
-            _, el = self._context_and_edge_logits(work)
-            if (el > MASK_VALUE / 2).sum() == 0:           # no alive edges left
+            cw, ew, _ = self._embed(work)
+            el = self._edge_logits(work, cw, ew)
+            if (el > MASK_VALUE / 2).sum() == 0:
                 break
             d = Categorical(logits=el)
             pick = el.argmax() if greedy else d.sample()
-            logp = logp + d.log_prob(pick)                 # logp: full SUM (joint log-prob)
+            logp = logp + d.log_prob(pick)
             edge_ents.append(d.entropy())
             pi = int(pick.item())
             edges.append(pi)
             self._mark_cut(work, pi)
 
-        # entropy bonus = size entropy + MEAN per-pick entropy. Averaging (not
-        # summing) keeps the bonus scale-invariant to batch size, so ent_coef
-        # stays comparable to the flat policy. logp stays the full sum.
-        entropy = ent_size + (torch.stack(edge_ents).mean() if edge_ents else 0.0 * ent_size)
-        return {"type": "batch", "size_idx": sci, "edges": edges}, logp, entropy, value
+        entropy = entropy + (torch.stack(edge_ents).mean() if edge_ents else 0.0 * entropy)
+        return {"type": "batch", "size_idx": t, "edges": edges}, logp, entropy, value
 
-    # ---- evaluating a stored action (PPO update) ----
+    # ---- evaluating a stored action (PPO update, teacher-forced) ----
 
     def evaluate(self, obs, action):
-        """Recompute (logp, entropy, value) for a STORED action via teacher
-        forcing — replay the same size choice and the same edge sequence so the
-        log-prob matches what act() produced (modulo weight updates)."""
-        edge_logits, size_logits, value = self.forward(obs)
-        size_dist = Categorical(logits=size_logits)
+        ctx, e, n = self._embed(obs)
+        type_logits = self._type_logits(obs, ctx)
+        node_logits = self._node_logits(obs, ctx, n)
+        value = self.value_head(ctx).squeeze(-1)
+        type_dist = Categorical(logits=type_logits)
 
         if action["type"] == "stop":
-            sc = torch.zeros((), dtype=torch.long, device=size_logits.device)
-            return size_dist.log_prob(sc), size_dist.entropy(), value
+            sc = torch.zeros((), dtype=torch.long, device=type_logits.device)
+            return type_dist.log_prob(sc), type_dist.entropy(), value
 
-        sci = action["size_idx"]
-        sc = torch.as_tensor(sci, dtype=torch.long, device=size_logits.device)
-        logp = size_dist.log_prob(sc)
-        ent_size = size_dist.entropy()
+        if action["type"] == "kill":
+            sc = torch.as_tensor(self.kill_idx, dtype=torch.long, device=type_logits.device)
+            logp = type_dist.log_prob(sc)
+            entropy = type_dist.entropy()
+            node_dist = Categorical(logits=node_logits)
+            nt = torch.as_tensor(action["node"], dtype=torch.long, device=node_logits.device)
+            return logp + node_dist.log_prob(nt), entropy + node_dist.entropy(), value
 
+        # BATCH
+        sc = torch.as_tensor(action["size_idx"], dtype=torch.long, device=type_logits.device)
+        logp = type_dist.log_prob(sc)
+        ent_type = type_dist.entropy()
         work = self._clone_dynamic(obs)
         edge_ents: List[torch.Tensor] = []
         for pi in action["edges"]:
-            _, el = self._context_and_edge_logits(work)
+            cw, ew, _ = self._embed(work)
+            el = self._edge_logits(work, cw, ew)
             d = Categorical(logits=el)
             t = torch.as_tensor(pi, dtype=torch.long, device=el.device)
-            logp = logp + d.log_prob(t)                    # logp: full SUM
+            logp = logp + d.log_prob(t)
             edge_ents.append(d.entropy())
             self._mark_cut(work, pi)
-        entropy = ent_size + (torch.stack(edge_ents).mean() if edge_ents else 0.0 * ent_size)
+        entropy = ent_type + (torch.stack(edge_ents).mean() if edge_ents else 0.0 * ent_type)
         return logp, entropy, value

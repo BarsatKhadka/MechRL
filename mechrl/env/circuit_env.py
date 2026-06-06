@@ -389,19 +389,34 @@ class CircuitEnv:
                     "valid": True, "n_cut_this_step": 0}
             return self._observation(), reward, True, info
 
-        # Apply all picked cuts (candidate-local indices), then one faith eval.
+        # Apply cuts, then ONE faith eval. BATCH = the chosen edges; KILL = all of
+        # one parent node's still-alive candidate edges.
         faith_pre = float(self.reward.current_faith)
         n_cut = 0
-        for idx in action["edges"]:
-            if self.alive[idx]:
-                self.alive[idx] = False
-                self.mask[self.bundle.cand_edge_idx[idx]] = False
-                n_cut += 1
+        if action["type"] == "batch":
+            for idx in action["edges"]:
+                if self.alive[idx]:
+                    self.alive[idx] = False
+                    self.mask[self.bundle.cand_edge_idx[idx]] = False
+                    n_cut += 1
+            reason = "batch"
+        elif action["type"] == "kill":
+            group = self.bundle.parent_groups[action["node"]]   # candidate-local indices
+            alive_in_group = group[self.alive[group]]
+            n_cut = int(alive_in_group.numel())
+            if n_cut > 0:
+                self.alive[alive_in_group] = False
+                self.mask[self.bundle.cand_edge_idx[alive_in_group]] = False
+            reason = "kill"
+        else:
+            raise ValueError(f"unknown batch action type: {action['type']!r}")
+
         valid = n_cut > 0
         reward = self.reward.step(self.mask, valid_action=valid)
         self._last_faith_delta = float(self.reward.current_faith) - faith_pre
 
-        reason = "batch" if valid else "invalid"
+        if not valid:
+            reason = "invalid"
         if self.steps >= self.step_budget:
             reward = reward + self.reward.terminal(self.mask)
             self.done = True
