@@ -59,12 +59,17 @@ class CircuitReward:
         threshold_penalty: float = 3.0,
         invalid_penalty: float = -0.01,
         step_budget: int = 500,
+        minimality_weight: float = 1.0,
     ):
         self.engine = engine
         self.tau = faith_threshold
         self.lam = threshold_penalty
         self.invalid_penalty = invalid_penalty
         self.step_budget = step_budget
+        # w: how strongly minimality (cutting edges) is rewarded relative to the
+        # faith penalty. Default 1.0 = original behavior. Raise it if the agent is
+        # too risk-averse and plateaus with too many edges kept.
+        self.w = minimality_weight
 
         self.n_candidates: int = 0
         self._faith_before: float = 0.0
@@ -84,7 +89,7 @@ class CircuitReward:
         return max(0.0, 1.0 - kept / self.n_candidates)
 
     def _potential(self, faith: float, kept: int) -> float:
-        return self._minimality(kept) - self.lam * max(0.0, self.tau - faith)
+        return self.w * self._minimality(kept) - self.lam * max(0.0, self.tau - faith)
 
     # ---- episode lifecycle ----
 

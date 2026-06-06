@@ -254,6 +254,7 @@ class CircuitEnv:
         threshold_penalty: float = 3.0,
         invalid_penalty: float = -0.01,
         seed: int = 0,
+        minimality_weight: float = 1.0,
     ):
         if not bundles:
             raise ValueError("CircuitEnv needs at least one TaskBundle.")
@@ -262,6 +263,7 @@ class CircuitEnv:
         self.faith_threshold = faith_threshold
         self.threshold_penalty = threshold_penalty
         self.invalid_penalty = invalid_penalty
+        self.minimality_weight = minimality_weight
         self._rng = torch.Generator().manual_seed(seed)
 
         # Episode state (set by reset)
@@ -298,6 +300,7 @@ class CircuitEnv:
             threshold_penalty=self.threshold_penalty,
             invalid_penalty=self.invalid_penalty,
             step_budget=self.step_budget,
+            minimality_weight=self.minimality_weight,
         )
         self.reward.begin_episode(self.bundle.candidate_mask)
         self.faith_start = float(self.reward.current_faith)

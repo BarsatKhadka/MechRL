@@ -67,6 +67,9 @@ def parse_args():
     p.add_argument("--step-budget", type=int, default=400)
     p.add_argument("--faith-threshold", type=float, default=0.8, help="tau: faithfulness bar to clear")
     p.add_argument("--threshold-penalty", type=float, default=3.0, help="lambda: how hard the threshold is")
+    p.add_argument("--minimality-weight", type=float, default=1.0,
+                   help="w: how strongly cutting edges is rewarded vs the faith penalty. "
+                        "Raise above 1.0 if the agent is too risk-averse (keeps too many edges).")
     p.add_argument("--invalid-penalty", type=float, default=-0.01)
     # PPO
     p.add_argument("--total-iterations", type=int, default=500)
@@ -145,6 +148,7 @@ def main():
         threshold_penalty=args.threshold_penalty,
         invalid_penalty=args.invalid_penalty,
         seed=args.seed,
+        minimality_weight=args.minimality_weight,
     )
     if args.policy == "batch":
         policy = BatchCutPolicy(hidden=args.hidden, batch_sizes=tuple(args.batch_sizes))
