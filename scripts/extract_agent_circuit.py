@@ -49,6 +49,8 @@ def main():
     p.add_argument("--ckpt", default=None, help="specific checkpoint (default: latest in run dir)")
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", default=None)
+    p.add_argument("--num-rollouts", type=int, default=8,
+                   help="number of SAMPLED rollouts; keep the most faithful (best-of-K)")
     args = p.parse_args()
 
     device = args.device
@@ -89,24 +91,42 @@ def main():
     policy.load_state_dict(torch.load(ckpt, map_location=device))
     policy.eval()
 
-    # --- greedy rollout (deterministic policy = the circuit it commits to) ---
-    obs = env.reset(bundle_idx=0)
-    steps, last_info = 0, {}
-    with torch.no_grad():
-        while not env.done:
-            if is_batch:
-                action, _, _, _ = policy.act(move_obs(obs, device), greedy=True)
-            else:
-                logits, _ = policy(move_obs(obs, device))
-                action = int(torch.argmax(logits).item())
-            obs, _, done, last_info = env.step(action)
-            steps += 1
-    print(f"[extract] episode ended: reason={last_info.get('reason')} steps={steps}", flush=True)
+    # The policy is STOCHASTIC and was trained/measured by SAMPLING, so greedy
+    # (argmax) is off-distribution and can be degenerate (it was: faith ~0,
+    # circuit disconnected from the output). Extract by SAMPLING, best-of-K
+    # (matches training + the preprint's best-of-K planning). One greedy rollout
+    # is run first, only to show how degenerate the argmax path is.
+    def rollout(greedy: bool):
+        obs = env.reset(bundle_idx=0)
+        steps, info = 0, {}
+        with torch.no_grad():
+            while not env.done:
+                if is_batch:
+                    action, _, _, _ = policy.act(move_obs(obs, device), greedy=greedy)
+                elif greedy:
+                    logits, _ = policy(move_obs(obs, device))
+                    action = int(torch.argmax(logits).item())
+                else:
+                    action, _, _, _ = policy.act(move_obs(obs, device))
+                obs, _, done, info = env.step(action)
+                steps += 1
+        m = env.mask.clone().cpu()
+        return m, engine.faithfulness(m), int(m.sum().item()), steps, info
 
-    # --- the circuit = final mask ---
-    mask = env.mask.clone().cpu()
+    gm, gf, gk, gs, _ = rollout(greedy=True)
+    print(f"[extract] GREEDY:  kept {gk:5d}  faith {gf:+.4f}  (argmax = off-distribution)", flush=True)
+
+    best = None
+    for k in range(args.num_rollouts):
+        m, f, kp, st, info = rollout(greedy=False)
+        print(f"[extract] sample {k}: kept {kp:5d}  faith {f:+.4f}", flush=True)
+        if best is None or f > best[1]:
+            best = (m, f, kp, st, info)
+    mask, faith, kept, steps, last_info = best
+    print(f"[extract] BEST-of-{args.num_rollouts} (by faith): kept {kept}  faith {faith:.4f}", flush=True)
+
+    # --- the circuit = best sampled final mask ---
     edge_names = [engine.edge_list[i].name for i in mask.nonzero(as_tuple=True)[0].tolist()]
-    faith = engine.faithfulness(mask)
     kl = engine.run_with_mask(mask)
     kl_cut = engine.corrupted_baseline()
 
@@ -121,14 +141,17 @@ def main():
         "kl_cut": kl_cut,
         "stop_reason": last_info.get("reason"),
         "steps": steps,
+        "num_rollouts": args.num_rollouts,
+        "greedy_faith": gf,
+        "greedy_edges": gk,
         "edges": edge_names,
     }
     out = Path(args.out) if args.out else (run_dir / "agent_circuit_ioi.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2))
 
-    print(f"\n[extract] circuit: {len(edge_names)} edges @ faith {faith:.4f} "
-          f"(KL {kl:.4f}, cut {kl_cut:.4f})", flush=True)
+    print(f"\n[extract] circuit (best of {args.num_rollouts} sampled): {len(edge_names)} edges "
+          f"@ faith {faith:.4f} (KL {kl:.4f}, cut {kl_cut:.4f})", flush=True)
     print(f"[extract] saved -> {out}", flush=True)
 
 
