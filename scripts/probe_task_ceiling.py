@@ -56,6 +56,8 @@ def main():
     p.add_argument("--tasks", required=True)
     p.add_argument("--num-examples", type=int, default=20)
     p.add_argument("--induction-sweep", action="store_true")
+    p.add_argument("--dead-experiments", action="store_true",
+                   help="re-run the settled induction/successor fix experiments")
     p.add_argument("--force", action="store_true", help="ignore cached prefilter scores")
     p.add_argument("--device", default="cuda")
     args = p.parse_args()
@@ -98,26 +100,27 @@ def main():
                     except Exception as e:
                         print(f"Induction hl={half_len} n={nex:<4} FAILED  {type(e).__name__}: {e}", flush=True)
 
-        # --- Fix experiments (the actual point of this run) ---
+        # --- Fix experiments ---
+        # (Induction = diffuse and Successor = weak-behavior were SETTLED/dropped by the
+        #  earlier run; pass --dead-experiments to re-run them. Default skips for speed.)
         print("\n=== Part 3: FIX experiments ===")
         print(f"{'config':30s} {'fullKL':>12s} {'KL_cut':>9s}    " + "".join(f"K={k:<6}" for k in [3000, 8000, 16000, 'ALL']))
         print("-" * len(hdr))
-        # Successor: single category -> uniform length, NO EOS padding (test the artifact)
-        for cat in ("months", "days", "numbers"):
-            try:
-                _probe_one(f"Successor cat={cat}",
-                           SuccessorHeadsTask(num_examples=max(args.num_examples, 40),
-                                              only_category=cat, device=device), ks, args.force)
-            except Exception as e:
-                print(f"Successor cat={cat:<8} FAILED  {type(e).__name__}: {e}", flush=True)
-        # Induction: contiguous real text (in-distribution) instead of random gibberish
-        for hl in (8, 16, 25):
-            try:
-                _probe_one(f"Induction REALTEXT hl={hl}",
-                           InductionTask(num_examples=args.num_examples, half_len=hl,
-                                         real_text=True, device=device), ks, args.force)
-            except Exception as e:
-                print(f"Induction REALTEXT hl={hl:<3} FAILED  {type(e).__name__}: {e}", flush=True)
+        if args.dead_experiments:
+            for cat in ("months", "days", "numbers"):
+                try:
+                    _probe_one(f"Successor cat={cat}",
+                               SuccessorHeadsTask(num_examples=max(args.num_examples, 40),
+                                                  only_category=cat, device=device), ks, args.force)
+                except Exception as e:
+                    print(f"Successor cat={cat:<8} FAILED  {type(e).__name__}: {e}", flush=True)
+            for hl in (8, 16, 25):
+                try:
+                    _probe_one(f"Induction REALTEXT hl={hl}",
+                               InductionTask(num_examples=args.num_examples, half_len=hl,
+                                             real_text=True, device=device), ks, args.force)
+                except Exception as e:
+                    print(f"Induction REALTEXT hl={hl:<3} FAILED  {type(e).__name__}: {e}", flush=True)
         # Docstring: NEW strong-cue variants (keep :param/:arg field) vs the working base.
         from mechrl.tasks import DocstringGPT2Task
         from mechrl.tasks.docstring_variants import DocstringVariantTask
