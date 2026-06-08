@@ -27,9 +27,11 @@ cd ~/MechRL
 source venv/bin/activate
 python -c "import torch; print('cuda?', torch.cuda.is_available())"
 
+# per-task tau auto-derived from each task's ceiling (--faith-margin); watch the
+# "[bar]" lines at startup and the per-task "└ ..." lines for both tasks clearing tau.
 python -m mechrl.train.train_agent --policy batch \
     --tasks IOITask,GreaterThanOriginal --num-examples 20 \
-    --batch-sizes 1 3 10 30 --faith-threshold 0.95 --threshold-penalty 6 \
+    --batch-sizes 1 3 10 30 --faith-margin 0.05 --threshold-penalty 6 \
     --step-budget 150 --num-steps 512 --total-iterations 150 \
     --device cuda --out runs
 

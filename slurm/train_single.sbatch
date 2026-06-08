@@ -20,17 +20,18 @@
 #SBATCH --error=mechrl_single.%j.err
 
 TASK=${TASK:-IOITask}
-TAU=${TAU:-0.95}
+MARGIN=${MARGIN:-0.05}    # tau = (this task's measured ceiling) - MARGIN
 LAM=${LAM:-6}
 ITERS=${ITERS:-150}
 
-echo "[$(hostname)] start $(date)  TASK=$TASK TAU=$TAU LAM=$LAM ITERS=$ITERS"
+echo "[$(hostname)] start $(date)  TASK=$TASK MARGIN=$MARGIN LAM=$LAM ITERS=$ITERS"
 cd ~/MechRL
 source venv/bin/activate
 
+# tau is auto-derived from the task's ceiling (printed as "[bar] ... ceiling=.. -> tau=..").
 python -m mechrl.train.train_agent --policy batch \
     --tasks "$TASK" --num-examples 20 \
-    --batch-sizes 1 3 10 30 --faith-threshold "$TAU" --threshold-penalty "$LAM" \
+    --batch-sizes 1 3 10 30 --faith-margin "$MARGIN" --threshold-penalty "$LAM" \
     --step-budget 150 --num-steps 512 --total-iterations "$ITERS" \
     --device cuda --out runs
 
