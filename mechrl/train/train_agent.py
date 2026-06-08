@@ -33,6 +33,7 @@ from mechrl.tasks import (
     DocstringGPT2ClassSphinxTask, DocstringGPT2Numpy5Task,
 )
 from mechrl.env import CircuitEnv, TaskBundle
+from mechrl.env.shared_model import build_shared_gpt2, use_shared_gpt2
 from mechrl.agent import CircuitPolicy
 from mechrl.agent.batch_policy import BatchCutPolicy
 from mechrl.train import PPOConfig, PPOTrainer
@@ -54,8 +55,22 @@ def resolve_tasks(spec: str):
         return TASK_SETS[spec]
     if spec in _BY_NAME:
         return [_BY_NAME[spec]]
+    # comma-list of set names and/or class names, e.g. "ioi,greaterthan" (8 tasks)
+    # or "IOITask,GreaterThanOriginal". Lets you compose a multi-task TRAIN set and
+    # keep a separate held-out set for the transfer eval. Order preserved, deduped.
+    if "," in spec:
+        out, seen = [], set()
+        for part in (p.strip() for p in spec.split(",") if p.strip()):
+            group = TASK_SETS.get(part) or ([_BY_NAME[part]] if part in _BY_NAME else None)
+            if group is None:
+                raise ValueError(f"Unknown task {part!r} in --tasks {spec!r}")
+            for c in group:
+                if c not in seen:
+                    seen.add(c); out.append(c)
+        return out
     raise ValueError(
-        f"Unknown --tasks {spec!r}. Use one of {list(TASK_SETS)} or a class name in {list(_BY_NAME)}."
+        f"Unknown --tasks {spec!r}. Use one of {list(TASK_SETS)}, a class name in "
+        f"{list(_BY_NAME)}, or a comma-list of those."
     )
 
 
@@ -128,17 +143,24 @@ def main():
         print(f"[run] {run_name}  device={device}  tasks={[c.__name__ for c in classes]}", flush=True)
 
     # ---- build bundles (per-task EAP-IG prefilter, cached) ----
+    # ONE frozen GPT-2 shared across all tasks (N copies would OOM the 8GB GPU).
+    # Identical model per task, so single-task numerics/resumes are unchanged.
+    shared_model = build_shared_gpt2(device)
     bundles = []
-    for cls in classes:
-        kwargs = {"device": device}
-        if args.num_examples is not None:
-            kwargs["num_examples"] = args.num_examples
-        t0 = time.time()
-        task = cls(**kwargs)
-        bundle = TaskBundle.build(task, k=args.k)
-        bundles.append(bundle)
-        print(f"  built {cls.__name__:28s} K={bundle.n_candidates} "
-              f"M={len(bundle.parent_names)} ({time.time()-t0:.0f}s)", flush=True)
+    with use_shared_gpt2(shared_model):
+        for cls in classes:
+            kwargs = {"device": device}
+            if args.num_examples is not None:
+                kwargs["num_examples"] = args.num_examples
+            t0 = time.time()
+            task = cls(**kwargs)
+            bundle = TaskBundle.build(task, k=args.k)
+            bundles.append(bundle)
+            print(f"  built {cls.__name__:28s} K={bundle.n_candidates} "
+                  f"M={len(bundle.parent_names)} ({time.time()-t0:.0f}s)", flush=True)
+    assert all(b.task.model is shared_model for b in bundles), \
+        "tasks did not share the model -- shared-GPT-2 interception failed"
+    print(f"  [shared] 1 GPT-2 across {len(bundles)} task(s)", flush=True)
 
     # ---- env + policy + PPO ----
     env = CircuitEnv(
