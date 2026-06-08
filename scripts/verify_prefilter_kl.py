@@ -1,22 +1,20 @@
-"""Does KL-attribution lift the candidate-set faith CEILING on diffuse tasks?
+"""Baseline diagnostic: how much KL-faith can the candidate set reach, per task?
 
-The prefilter picks the top-K candidate edges the agent is allowed to keep. If that
-set can't reproduce the full model's distribution, the agent's KL-faith is hard-capped
-no matter how well it searches. On IOI/greater-than the logit-diff candidate set is
-already great (~0.95+); on docstring it caps low (~0.5-0.65) because logit-diff-important
-edges != distribution-reproducing edges.
+The top-K candidate set is the CEILING — the agent can never beat it. If a task's
+ceiling is low, that task is broken before training starts (this was docstring:
+~0.51-0.64). The ceiling has two levers:
+    * WHICH edges  -> attribution metric: logit-diff (legacy) vs KL (new)
+    * HOW MANY      -> K
 
-This script measures, per task, the KL-faithfulness of the FULL top-K candidate set
-(the ceiling) under:
-    * logit-diff attribution  (legacy: metric_type=None)
-    * KL attribution          (new:    metric_type="kl")
-A lift on docstring (and no regression on IOI/greater-than) means the fix works and
-should be used for the multi-task / held-out runs.
+This sweeps both, per task, and prints the candidate-set KL-faithfulness so we can
+see exactly what fixes each low task: better selection (KL column beats logit-diff),
+more edges (faith rises with K), or neither (inherently diffuse -> drop / accept).
 
-Run on a GPU cluster (attribution = forward+backward x ig_steps per task):
-    python -m scripts.verify_prefilter_kl \
-        --tasks IOITask,GreaterThanOriginal,DocstringGPT2Task,DocstringGPT2Google5Task,DocstringGPT2Sphinx7Task \
-        --num-examples 20 --device cuda
+Run on a GPU (attribution = forward+backward x ig_steps, per task per metric):
+    python -m scripts.verify_prefilter_kl --tasks all,CopySuppressionTask,SuccessorHeadsTask,InductionTask \
+        --ks 1500,3000,5000,8000 --num-examples 20 --device cuda
+
+(`all` = the 13 training tasks; add held-out class names to cover them too.)
 """
 
 from __future__ import annotations
@@ -33,7 +31,7 @@ from mechrl.train.train_agent import resolve_tasks
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--tasks", required=True, help="comma-list of set/class names (see train_agent)")
-    p.add_argument("--k", type=int, default=3000)
+    p.add_argument("--ks", default="1500,3000,5000,8000", help="comma-list of K values to sweep")
     p.add_argument("--num-examples", type=int, default=20)
     p.add_argument("--ig-steps", type=int, default=5)
     p.add_argument("--device", default="cuda")
@@ -45,35 +43,44 @@ def main():
         print("[warn] cuda not available; using cpu", flush=True)
         device = "cpu"
 
+    ks = [int(x) for x in args.ks.split(",") if x.strip()]
     classes = resolve_tasks(args.tasks)
     shared = build_shared_gpt2(device)
 
-    print(f"\n{'task':30s} {'logit-diff':>12s} {'KL-attr':>12s} {'lift':>8s}   verdict")
-    print("-" * 78)
-    rows = []
+    kcols = "".join(f"K={k:<6d}" for k in ks)
+    header = f"{'task':28s} {'attr':9s} {kcols}"
+    print("\n" + header)
+    print("-" * len(header))
+
+    low = []  # tasks whose best ceiling at the largest K is still < 0.85
     with use_shared_gpt2(shared):
         for cls in classes:
             task = cls(num_examples=args.num_examples, device=device)
             graph = build_graph(task.model)
             engine = AblationEngine(task, graph, metric_type="kl")
 
-            ceil = {}
-            for mt in (None, "kl"):
+            best_at_maxk = -1.0
+            for mt, label in ((None, "logitdiff"), ("kl", "kl-attr")):
                 pref = Prefilter(task, graph, ig_steps=args.ig_steps, metric_type=mt)
-                pref.compute(force=args.force)          # writes scores into `graph`
-                mask = pref.candidate_mask(args.k)      # read BEFORE next compute overwrites
-                ceil[mt] = engine.faithfulness(mask)
+                pref.compute(force=args.force)               # writes scores into `graph`
+                cells = ""
+                for k in ks:
+                    faith = engine.faithfulness(pref.candidate_mask(k))   # read before next compute
+                    cells += f"{faith:<8.3f}"
+                    if k == ks[-1]:
+                        best_at_maxk = max(best_at_maxk, faith)
+                print(f"{cls.__name__:28s} {label:9s} {cells}", flush=True)
+            if best_at_maxk < 0.85:
+                low.append((cls.__name__, best_at_maxk))
+            print("-" * len(header))
 
-            ld, kl = ceil[None], ceil["kl"]
-            lift = kl - ld
-            verdict = "✓ lift" if lift > 0.02 else ("~ same" if abs(lift) <= 0.02 else "✗ worse")
-            print(f"{cls.__name__:30s} {ld:12.4f} {kl:12.4f} {lift:+8.4f}   {verdict}", flush=True)
-            rows.append((cls.__name__, ld, kl))
-
-    print("-" * 78)
-    print("Use --prefilter-metric kl for multi-task IF docstring lifts toward >=0.85 and "
-          "IOI/greater-than don't regress. If docstring still caps low, raise --k or drop "
-          "it from the held-out set (use copy-suppression / successor-heads instead).")
+    if low:
+        print("\nSTILL LOW (best ceiling < 0.85 even at max K) -> drop from set or accept lower:")
+        for name, f in low:
+            print(f"  {name:28s} {f:.3f}")
+    else:
+        print("\nAll tasks reach >=0.85 ceiling at some K/attribution. Pick the cheapest "
+              "(smallest K, and kl only if it beats logitdiff) per task for the real runs.")
 
 
 if __name__ == "__main__":
