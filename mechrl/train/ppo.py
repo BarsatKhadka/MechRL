@@ -238,7 +238,9 @@ class PPOTrainer:
             kepts = [i.get("kept", -1) for i in batch["ep_infos"]]
 
             # ---- per-task breakdown (multi-task): faith/kept/return per task this iter ----
-            tau = getattr(self.env, "faith_threshold", 0.0)
+            # tau is PER-TASK (ceiling - margin); fall back to a global if not exposed.
+            taus = getattr(self.env, "taus", None)
+            global_tau = getattr(self.env, "faith_threshold", 0.0)
             by_task: dict = {}
             for idx, info, r in zip(batch["ep_tasks"], batch["ep_infos"], eps):
                 d = by_task.setdefault(idx, {"faith": [], "kept": [], "ret": []})
@@ -248,8 +250,9 @@ class PPOTrainer:
             per_task = {}
             for idx, d in by_task.items():
                 label = self.task_labels[idx] if idx < len(self.task_labels) else str(idx)
+                tau = taus[idx] if taus is not None and idx < len(taus) else global_tau
                 f = float(np.nanmean(d["faith"])) if d["faith"] else float("nan")
-                # iters-to-finding-success: first iter this task's mean faith clears tau
+                # iters-to-finding-success: first iter this task's mean faith clears its tau
                 if f >= tau and label not in self._success_iter:
                     self._success_iter[label] = it
                 per_task[label] = {
@@ -257,7 +260,7 @@ class PPOTrainer:
                     "kept": float(np.mean(d["kept"])) if d["kept"] else float("nan"),
                     "return": float(np.mean(d["ret"])),
                     "episodes": len(d["ret"]),
-                    "tau": tau,                                  # the per-task faith bar
+                    "tau": float(tau),                           # this task's own faith bar
                     "hit_tau": bool(f >= tau),
                     "first_success_iter": self._success_iter.get(label),
                 }

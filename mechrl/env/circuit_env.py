@@ -188,6 +188,8 @@ class TaskBundle:
     n_candidates: int
     parent_names: List[str]
     parent_groups: List[torch.Tensor]
+    ceiling: float = 1.0   # KL-faith of the FULL candidate set (top-K); the best the
+                           # agent could reach here. Per-task tau is derived from this.
 
     @classmethod
     def build(
@@ -221,6 +223,11 @@ class TaskBundle:
             engine, cand_edge_idx
         )
 
+        # Measure the candidate-set CEILING (faith of keeping ALL top-K) once -> the
+        # per-task tau is derived from this (tau = ceiling - margin), so the fidelity
+        # bar matches what's actually reachable for THIS task. One forward pass.
+        ceiling = float(engine.faithfulness(candidate_mask))
+
         return cls(
             task=task,
             engine=engine,
@@ -231,6 +238,7 @@ class TaskBundle:
             n_candidates=n_candidates,
             parent_names=parent_names,
             parent_groups=parent_groups,
+            ceiling=ceiling,
         )
 
 
@@ -262,6 +270,7 @@ class CircuitEnv:
         invalid_penalty: float = -0.01,
         seed: int = 0,
         minimality_weight: float = 1.0,
+        faith_margin: Optional[float] = None,
     ):
         if not bundles:
             raise ValueError("CircuitEnv needs at least one TaskBundle.")
@@ -271,6 +280,14 @@ class CircuitEnv:
         self.threshold_penalty = threshold_penalty
         self.invalid_penalty = invalid_penalty
         self.minimality_weight = minimality_weight
+        self.faith_margin = faith_margin
+        # Per-task fidelity bar. faith_margin set -> tau_i = ceiling_i - margin (clamped),
+        # so every task's bar matches what it can actually reach (a high uniform tau is
+        # UNCLEARABLE for low-ceiling tasks like docstring). None -> uniform faith_threshold.
+        if faith_margin is not None:
+            self.taus = [min(0.98, max(0.50, b.ceiling - faith_margin)) for b in bundles]
+        else:
+            self.taus = [faith_threshold] * len(bundles)
         self._rng = torch.Generator().manual_seed(seed)
 
         # Episode state (set by reset)
@@ -303,7 +320,7 @@ class CircuitEnv:
 
         self.reward = CircuitReward(
             self.bundle.engine,
-            faith_threshold=self.faith_threshold,
+            faith_threshold=self.taus[self.bundle_idx],   # per-task bar (ceiling - margin)
             threshold_penalty=self.threshold_penalty,
             invalid_penalty=self.invalid_penalty,
             step_budget=self.step_budget,

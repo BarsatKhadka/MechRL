@@ -98,7 +98,11 @@ def parse_args():
                         "(matches the agent's KL faithfulness; use for diffuse tasks like "
                         "docstring whose logit-diff candidate set caps faith low).")
     p.add_argument("--step-budget", type=int, default=400)
-    p.add_argument("--faith-threshold", type=float, default=0.8, help="tau: faithfulness bar to clear")
+    p.add_argument("--faith-threshold", type=float, default=0.8, help="tau: UNIFORM faithfulness bar (used when --faith-margin is unset)")
+    p.add_argument("--faith-margin", type=float, default=None,
+                   help="if set, use PER-TASK tau = (measured candidate-set ceiling) - margin, "
+                        "so each task's bar matches what it can reach (low-ceiling tasks like "
+                        "docstring get a lower bar). Recommended for multi-task. e.g. 0.05")
     p.add_argument("--threshold-penalty", type=float, default=3.0, help="lambda: how hard the threshold is")
     p.add_argument("--minimality-weight", type=float, default=1.0,
                    help="w: how strongly cutting edges is rewarded vs the faith penalty. "
@@ -209,7 +213,11 @@ def main():
         invalid_penalty=args.invalid_penalty,
         seed=args.seed,
         minimality_weight=args.minimality_weight,
+        faith_margin=args.faith_margin,
     )
+    # Show each task's measured ceiling and the (per-task or uniform) bar it must clear.
+    for i, b in enumerate(bundles):
+        print(f"  [bar] {type(b.task).__name__:28s} ceiling={b.ceiling:.3f} -> tau={env.taus[i]:.3f}", flush=True)
     if args.policy == "batch":
         policy = BatchCutPolicy(hidden=args.hidden, batch_sizes=tuple(args.batch_sizes))
         print(f"[policy] BatchCutPolicy batch_sizes={args.batch_sizes}", flush=True)
