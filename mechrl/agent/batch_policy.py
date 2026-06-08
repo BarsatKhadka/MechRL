@@ -78,17 +78,36 @@ class BatchCutPolicy(nn.Module):
 
     # ---- trunk + heads ----
 
+    def _ctx_from(self, e, n, g):
+        """Context from already-embedded edges/nodes + globals (the cheap part).
+
+        Pulled out of _embed so the autoregressive batch loop can recompute the
+        context after each cut WITHOUT re-running the edge/node MLPs (only the
+        pooled reductions + a small MLP). Cutting an edge changes e.mean/e.amax
+        and the alive-fraction global, so ctx must be recomputed -- but the
+        per-edge/per-node embeddings are reused (see _embed_dead / act/evaluate).
+        """
+        pooled = torch.cat([e.mean(0), e.amax(0), n.mean(0), n.amax(0), g], dim=-1)
+        return self.context(pooled)
+
     def _embed(self, obs):
         ef = obs["edge_features"]
         nf = obs["node_features"]
         ea = obs["edge_alive"].unsqueeze(-1)
         naf = obs["kill_alive_frac"].unsqueeze(-1)
-        g = obs["globals"]
         e = self.edge_embed(torch.cat([ef, ea], dim=-1))   # [K, H]
         n = self.node_embed(torch.cat([nf, naf], dim=-1))  # [M, H]
-        pooled = torch.cat([e.mean(0), e.amax(0), n.mean(0), n.amax(0), g], dim=-1)
-        ctx = self.context(pooled)
+        ctx = self._ctx_from(e, n, obs["globals"])
         return ctx, e, n
+
+    def _embed_dead(self, obs):
+        """Edge embeddings with alive=0 for EVERY edge. Cutting edge i during the
+        autoregressive loop just swaps row i of the live embeddings for this row i
+        -- exactly what edge_embed([ef_i, 0]) would give -- so we never re-run the
+        edge MLP per pick. Computed once per batch (lazily, only when N>1)."""
+        ef = obs["edge_features"]
+        zeros = torch.zeros_like(obs["edge_alive"]).unsqueeze(-1)
+        return self.edge_embed(torch.cat([ef, zeros], dim=-1))   # [K, H]
 
     def _edge_logits(self, obs, ctx, e):
         ctx_e = ctx.unsqueeze(0).expand(e.size(0), -1)
@@ -161,12 +180,18 @@ class BatchCutPolicy(nn.Module):
             return {"type": "kill", "node": int(node.item())}, logp, entropy, value
 
         # BATCH: autoregressively sample N edges, re-scoring between picks.
+        # Edge/node embeddings are computed ONCE (e, n from _embed above); each cut
+        # only swaps the cut edge's row to its alive=0 embedding (e_dead) and bumps
+        # the alive-fraction global -- no per-pick edge/node MLP. Numerically
+        # identical to re-embedding from scratch (verified by test_batch_policy).
         n_target = self.batch_sizes[t - 1]
         work = self._clone_dynamic(obs)
+        ew = e
+        e_dead = self._embed_dead(obs) if n_target > 1 else None
         edges: List[int] = []
         edge_ents: List[torch.Tensor] = []
-        for _ in range(n_target):
-            cw, ew, _ = self._embed(work)
+        for j in range(n_target):
+            cw = self._ctx_from(ew, n, work["globals"])
             el = self._edge_logits(work, cw, ew)
             if (el > MASK_VALUE / 2).sum() == 0:
                 break
@@ -176,6 +201,8 @@ class BatchCutPolicy(nn.Module):
             edge_ents.append(d.entropy())
             pi = int(pick.item())
             edges.append(pi)
+            if e_dead is not None and j + 1 < n_target:
+                ew = ew.index_copy(0, pick.view(1).long(), e_dead[pi:pi + 1])
             self._mark_cut(work, pi)
 
         entropy = entropy + (torch.stack(edge_ents).mean() if edge_ents else 0.0 * entropy)
@@ -202,19 +229,26 @@ class BatchCutPolicy(nn.Module):
             nt = torch.as_tensor(action["node"], dtype=torch.long, device=node_logits.device)
             return logp + node_dist.log_prob(nt), entropy + node_dist.entropy(), value
 
-        # BATCH
+        # BATCH -- teacher-forced replay of the stored edges. Same cached-embedding
+        # trick as act() (cut row -> e_dead), so the per-pick logits (hence log_prob)
+        # are identical to act's; the test asserts the exact match.
         sc = torch.as_tensor(action["size_idx"], dtype=torch.long, device=type_logits.device)
         logp = type_dist.log_prob(sc)
         ent_type = type_dist.entropy()
         work = self._clone_dynamic(obs)
+        ew = e
+        n_edges = len(action["edges"])
+        e_dead = self._embed_dead(obs) if n_edges > 1 else None
         edge_ents: List[torch.Tensor] = []
-        for pi in action["edges"]:
-            cw, ew, _ = self._embed(work)
+        for j, pi in enumerate(action["edges"]):
+            cw = self._ctx_from(ew, n, work["globals"])
             el = self._edge_logits(work, cw, ew)
             d = Categorical(logits=el)
             t = torch.as_tensor(pi, dtype=torch.long, device=el.device)
             logp = logp + d.log_prob(t)
             edge_ents.append(d.entropy())
+            if e_dead is not None and j + 1 < n_edges:
+                ew = ew.index_copy(0, t.view(1), e_dead[pi:pi + 1])
             self._mark_cut(work, pi)
         entropy = ent_type + (torch.stack(edge_ents).mean() if edge_ents else 0.0 * ent_type)
         return logp, entropy, value
