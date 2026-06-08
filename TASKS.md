@@ -59,6 +59,27 @@ Two failure modes (opposite fixes — don't confuse them):
 
 ---
 
+## Training bar (τ) — derived from the ceiling, NOT a uniform guess
+
+The reward penalizes faith below τ. A uniform τ is wrong here: docstring's ceiling
+(~0.88) is *below* IOI's τ (0.95), so a uniform 0.95 would make docstring **permanently
+unclearable**. Instead, each task's bar is derived from its own measured ceiling:
+
+> **`τ_task = clamp(ceiling_task − margin, [0.50, 0.98])`**, via `--faith-margin` (e.g. 0.05).
+
+The ceiling is measured automatically at `TaskBundle.build` (`engine.faithfulness(candidate_mask)`,
+one forward) and printed at startup as `[bar] <Task> ceiling=.. -> tau=..`. So IOI gets
+~0.90, GreaterThan ~0.93, Docstring ~0.83, GenderedPronoun ~0.95 — each clearable and
+task-appropriate. Per-task logging marks ✓ when a task clears *its own* τ and records
+`first_success_iter` (the forward-transfer signal). Uniform `--faith-threshold` still
+exists for single-task reproduction (e.g. the locked IOI run at 0.95).
+
+**Ceiling ≠ agent-achievable.** The table below is the *candidate-set* ceiling (best
+possible). Whether the *agent* reaches near it is a separate check — confirmed for IOI
+(~0.94); verify others single-task (`slurm/train_single.sbatch`) before multi-task.
+
+---
+
 ## Full ceiling table (everything we measured)
 
 `faith@K` = top-K candidate-set KL-faith. `—` = not separately measured (faith suffices).
