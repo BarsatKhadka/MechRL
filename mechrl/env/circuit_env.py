@@ -196,14 +196,21 @@ class TaskBundle:
         k: int = 3000,
         ig_steps: int = 5,
         prefilter_batch_size: int = 10,
+        prefilter_metric: Optional[str] = None,
     ) -> "TaskBundle":
-        """Run the one-time expensive setup for a task."""
+        """Run the one-time expensive setup for a task.
+
+        prefilter_metric="kl" ranks candidate edges by KL attribution (matches the
+        engine's KL faithfulness) instead of logit-diff — fixes diffuse tasks like
+        docstring whose logit-diff candidate set caps KL-faith low. None = legacy
+        logit-diff attribution (keeps the locked single-task IOI reproducible).
+        """
         graph = build_graph(task.model)
         # KL faithfulness: reproduce the full model's output distribution (caps at
         # 1.0, keeps suppressors — no faith>1.0 overshoot). See reward-loop.md.
         engine = AblationEngine(task, graph, metric_type="kl")
 
-        pref = Prefilter(task, graph, ig_steps=ig_steps)
+        pref = Prefilter(task, graph, ig_steps=ig_steps, metric_type=prefilter_metric)
         pref.compute(batch_size=prefilter_batch_size)
         candidate_mask = pref.candidate_mask(k)
         cand_edge_idx = candidate_mask.nonzero(as_tuple=True)[0]

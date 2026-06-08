@@ -79,6 +79,11 @@ def parse_args():
     p.add_argument("--tasks", default="all", help="task set or single class name")
     p.add_argument("--num-examples", type=int, default=None, help="override per-task example count")
     p.add_argument("--k", type=int, default=3000, help="top-K candidate edges")
+    p.add_argument("--prefilter-metric", choices=["task", "kl"], default="task",
+                   help="how to rank candidate edges: 'task' = logit-diff attribution "
+                        "(legacy, keeps locked IOI reproducible); 'kl' = KL attribution "
+                        "(matches the agent's KL faithfulness; use for diffuse tasks like "
+                        "docstring whose logit-diff candidate set caps faith low).")
     p.add_argument("--step-budget", type=int, default=400)
     p.add_argument("--faith-threshold", type=float, default=0.8, help="tau: faithfulness bar to clear")
     p.add_argument("--threshold-penalty", type=float, default=3.0, help="lambda: how hard the threshold is")
@@ -154,7 +159,10 @@ def main():
                 kwargs["num_examples"] = args.num_examples
             t0 = time.time()
             task = cls(**kwargs)
-            bundle = TaskBundle.build(task, k=args.k)
+            bundle = TaskBundle.build(
+                task, k=args.k,
+                prefilter_metric=("kl" if args.prefilter_metric == "kl" else None),
+            )
             bundles.append(bundle)
             print(f"  built {cls.__name__:28s} K={bundle.n_candidates} "
                   f"M={len(bundle.parent_names)} ({time.time()-t0:.0f}s)", flush=True)

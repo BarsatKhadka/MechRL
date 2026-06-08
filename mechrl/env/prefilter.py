@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from eap.attribute import attribute
@@ -67,6 +68,31 @@ def _logit_diff(logits, clean_logits, input_length, labels, mean=True, loss=Fals
     return diff
 
 
+def _kl_attr_metric(logits, clean_logits, input_length, labels):
+    """KL( full-model || circuit ) at the prediction position, for EAP-IG attribution.
+
+    Ranks candidate edges by how much they matter to reproducing the full model's
+    DISTRIBUTION -- i.e. exactly the KL faithfulness the agent is scored on -- instead
+    of logit-diff (two tokens). This fixes the prefilter<->engine mismatch that capped
+    diffuse tasks (docstring) low: logit-diff-important edges are not the same as
+    distribution-reproducing edges.
+
+    Uses `clean_logits` (the full model's clean output) as the reference -- attribute()
+    computes it for us (eap/attribute.py:90, comment names KL as the case), so this is
+    consistent with AblationEngine's KL metric (same model, same clean prompts).
+    KL >= 0, lower = better; top-K selection is by |score| so the sign is irrelevant.
+    """
+    bs = logits.size(0)
+    idx = torch.arange(bs, device=logits.device)
+    pos = (input_length - 1).to(logits.device).long()          # prediction position
+    circ = logits[idx, pos].float()
+    ref = clean_logits[idx, pos].float()
+    logp_circ = F.log_softmax(circ, dim=-1)
+    logp_ref = F.log_softmax(ref, dim=-1)
+    kl = (logp_ref.exp() * (logp_ref - logp_circ)).sum(-1)      # KL per example
+    return kl.mean()
+
+
 def _wrap_task_metric(task: Task) -> Callable:
     """Wrap task.validation_batch().metric (one-arg, takes logits) into the
     4-arg signature eap-ig's attribute() expects. Each task's natural metric
@@ -102,11 +128,16 @@ class Prefilter:
         ig_steps: int = 5,
         cache_dir: Optional[Path] = None,
         use_task_metric: bool = True,
+        metric_type: Optional[str] = None,
     ):
         self.task = task
         self.graph = graph
         self.ig_steps = ig_steps
         self.use_task_metric = use_task_metric
+        # metric_type="kl" -> rank candidates by KL attribution (matches the engine).
+        # None -> task's natural metric (logit-diff) as before. Opt-in so existing
+        # logit-diff-attributed runs (the locked single-task IOI) stay reproducible.
+        self.metric_type = metric_type
         self.cache_dir = cache_dir or (
             Path(__file__).resolve().parents[2] / "prefilter_cache"
         )
@@ -114,7 +145,12 @@ class Prefilter:
         self._scored = False
 
     def _cache_path(self) -> Path:
-        suffix = "_taskmetric" if self.use_task_metric else "_logitdiff"
+        if self.metric_type == "kl":
+            suffix = "_kl"
+        elif self.use_task_metric:
+            suffix = "_taskmetric"
+        else:
+            suffix = "_logitdiff"
         return (
             self.cache_dir
             / f"{self.task.name}_n{self.task.num_examples}_ig{self.ig_steps}{suffix}.pt"
@@ -136,8 +172,11 @@ class Prefilter:
 
         ds = _TaskEapDataset(self.task)
         # Must match AblationEngine: use one batch covering all examples so
-        # task metrics with batch-sized labels work correctly.
-        if self.use_task_metric:
+        # task metrics with batch-sized labels (and the KL reference) work correctly.
+        if self.metric_type == "kl":
+            effective_batch_size = self.task.num_examples
+            metric_fn = _kl_attr_metric
+        elif self.use_task_metric:
             effective_batch_size = self.task.num_examples
             metric_fn = _wrap_task_metric(self.task)
         else:
