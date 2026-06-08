@@ -39,6 +39,9 @@ from mechrl.tasks.ioi_variants import (
 )
 from mechrl.tasks.docstring_variants import (
     DocstringVariantTask,
+    DocstringSphinxDescTask,
+    DocstringFuncSphinxTask,
+    DocstringArgFieldTask,
     DocstringGPT2Sphinx7Task,
     DocstringGPT2Google5Task,
     DocstringGPT2ClassSphinxTask,
@@ -98,6 +101,9 @@ __all__ = [
     "DocstringGPT2Google5Task",
     "DocstringGPT2ClassSphinxTask",
     "DocstringGPT2Numpy5Task",
+    "DocstringSphinxDescTask",
+    "DocstringFuncSphinxTask",
+    "DocstringArgFieldTask",
     "DOCSTRING_VARIANT_CLASSES",
     # Combined training pool
     "TRAINING_TASK_CLASSES",

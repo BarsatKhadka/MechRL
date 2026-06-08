@@ -31,6 +31,7 @@ from mechrl.tasks import (
     GreaterThanOriginal, GreaterThanReversed, GreaterThanBeganEnded, GreaterThanTookPlace,
     DocstringGPT2Task, DocstringGPT2Sphinx7Task, DocstringGPT2Google5Task,
     DocstringGPT2ClassSphinxTask, DocstringGPT2Numpy5Task,
+    DocstringSphinxDescTask, DocstringFuncSphinxTask,   # new strong-cue variants (verified)
     # held-out / diagnostic-only families (not trained on, but nameable in --tasks)
     CopySuppressionTask, SuccessorHeadsTask, InductionTask,
     SubjectVerbAgreementTask, GenderedPronounTask,
@@ -42,17 +43,24 @@ from mechrl.agent.batch_policy import BatchCutPolicy
 from mechrl.train import PPOConfig, PPOTrainer
 
 
+_IOI = [IOITask, IOIAfterOpener, IOINoPlaceObject, IOIFriendsFound]
+_GREATERTHAN = [GreaterThanOriginal, GreaterThanReversed, GreaterThanBeganEnded, GreaterThanTookPlace]
+# Docstring = only the variants that CLEARED the ceiling gate (see TASKS.md); the weak
+# whitespace-cue ones (google5/numpy5/sphinx7/arg_field) are intentionally excluded.
+_DOCSTRING = [DocstringGPT2Task, DocstringGPT2ClassSphinxTask,
+              DocstringSphinxDescTask, DocstringFuncSphinxTask]
+
 TASK_SETS = {
-    "all": TRAINING_TASK_CLASSES,
-    "ioi": [IOITask, IOIAfterOpener, IOINoPlaceObject, IOIFriendsFound],
-    "greaterthan": [GreaterThanOriginal, GreaterThanReversed,
-                    GreaterThanBeganEnded, GreaterThanTookPlace],
-    "docstring": [DocstringGPT2Task, DocstringGPT2Sphinx7Task, DocstringGPT2Google5Task,
-                  DocstringGPT2ClassSphinxTask, DocstringGPT2Numpy5Task],
+    "all": TRAINING_TASK_CLASSES,               # legacy 13 (incl. weak docstrings)
+    "ioi": _IOI,
+    "greaterthan": _GREATERTHAN,
+    "docstring": _DOCSTRING,                     # the 4 GOOD variants only
+    # THE locked train set: 3 families, 12 verified tasks (see TASKS.md).
+    "train": _IOI + _GREATERTHAN + _DOCSTRING,
 }
 _HELD_OUT = [CopySuppressionTask, SuccessorHeadsTask, InductionTask,
              SubjectVerbAgreementTask, GenderedPronounTask]
-_BY_NAME = {c.__name__: c for c in TRAINING_TASK_CLASSES + _HELD_OUT}
+_BY_NAME = {c.__name__: c for c in TRAINING_TASK_CLASSES + _HELD_OUT + _DOCSTRING}
 
 
 def resolve_tasks(spec: str):
