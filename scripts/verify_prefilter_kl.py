@@ -52,26 +52,31 @@ def main():
     print("\n" + header)
     print("-" * len(header))
 
-    low = []  # tasks whose best ceiling at the largest K is still < 0.85
+    low = []     # best ceiling at the largest K still < 0.85
+    failed = []  # task didn't even build/score
     with use_shared_gpt2(shared):
         for cls in classes:
-            task = cls(num_examples=args.num_examples, device=device)
-            graph = build_graph(task.model)
-            engine = AblationEngine(task, graph, metric_type="kl")
+            try:
+                task = cls(num_examples=args.num_examples, device=device)
+                graph = build_graph(task.model)
+                engine = AblationEngine(task, graph, metric_type="kl")
 
-            best_at_maxk = -1.0
-            for mt, label in ((None, "logitdiff"), ("kl", "kl-attr")):
-                pref = Prefilter(task, graph, ig_steps=args.ig_steps, metric_type=mt)
-                pref.compute(force=args.force)               # writes scores into `graph`
-                cells = ""
-                for k in ks:
-                    faith = engine.faithfulness(pref.candidate_mask(k))   # read before next compute
-                    cells += f"{faith:<8.3f}"
-                    if k == ks[-1]:
-                        best_at_maxk = max(best_at_maxk, faith)
-                print(f"{cls.__name__:28s} {label:9s} {cells}", flush=True)
-            if best_at_maxk < 0.85:
-                low.append((cls.__name__, best_at_maxk))
+                best_at_maxk = -1.0
+                for mt, label in ((None, "logitdiff"), ("kl", "kl-attr")):
+                    pref = Prefilter(task, graph, ig_steps=args.ig_steps, metric_type=mt)
+                    pref.compute(force=args.force)               # writes scores into `graph`
+                    cells = ""
+                    for k in ks:
+                        faith = engine.faithfulness(pref.candidate_mask(k))   # read before next compute
+                        cells += f"{faith:<8.3f}"
+                        if k == ks[-1]:
+                            best_at_maxk = max(best_at_maxk, faith)
+                    print(f"{cls.__name__:28s} {label:9s} {cells}", flush=True)
+                if best_at_maxk < 0.85:
+                    low.append((cls.__name__, best_at_maxk))
+            except Exception as e:  # one bad task shouldn't kill the whole sweep
+                failed.append((cls.__name__, repr(e)))
+                print(f"{cls.__name__:28s} FAILED   {type(e).__name__}: {e}", flush=True)
             print("-" * len(header))
 
     if low:
@@ -79,8 +84,12 @@ def main():
         for name, f in low:
             print(f"  {name:28s} {f:.3f}")
     else:
-        print("\nAll tasks reach >=0.85 ceiling at some K/attribution. Pick the cheapest "
+        print("\nAll built tasks reach >=0.85 ceiling at some K/attribution. Pick the cheapest "
               "(smallest K, and kl only if it beats logitdiff) per task for the real runs.")
+    if failed:
+        print("\nFAILED TO BUILD/SCORE (investigate separately):")
+        for name, err in failed:
+            print(f"  {name:28s} {err}")
 
 
 if __name__ == "__main__":
