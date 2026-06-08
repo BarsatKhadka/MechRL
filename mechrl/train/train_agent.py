@@ -33,6 +33,7 @@ from mechrl.tasks import (
     DocstringGPT2ClassSphinxTask, DocstringGPT2Numpy5Task,
     # held-out / diagnostic-only families (not trained on, but nameable in --tasks)
     CopySuppressionTask, SuccessorHeadsTask, InductionTask,
+    SubjectVerbAgreementTask, GenderedPronounTask,
 )
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.env.shared_model import build_shared_gpt2, use_shared_gpt2
@@ -49,7 +50,8 @@ TASK_SETS = {
     "docstring": [DocstringGPT2Task, DocstringGPT2Sphinx7Task, DocstringGPT2Google5Task,
                   DocstringGPT2ClassSphinxTask, DocstringGPT2Numpy5Task],
 }
-_HELD_OUT = [CopySuppressionTask, SuccessorHeadsTask, InductionTask]
+_HELD_OUT = [CopySuppressionTask, SuccessorHeadsTask, InductionTask,
+             SubjectVerbAgreementTask, GenderedPronounTask]
 _BY_NAME = {c.__name__: c for c in TRAINING_TASK_CLASSES + _HELD_OUT}
 
 
