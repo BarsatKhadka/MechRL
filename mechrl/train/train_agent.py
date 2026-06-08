@@ -118,8 +118,26 @@ def parse_args():
     p.add_argument("--save-every", type=int, default=50)
     p.add_argument("--log-every", type=int, default=1)
     p.add_argument("--resume-from", default=None,
-                   help="path to a run dir; reload its latest policy_iter*.pt and continue")
+                   help="path to a run dir; reload its latest policy_iter*.pt and CONTINUE it (same dir, same iter count)")
+    p.add_argument("--init-from", default=None,
+                   help="path to a run dir or .pt; warm-start a FRESH run from those weights "
+                        "(new dir, iter 0, config reflects current --tasks). Use to scale a small "
+                        "validation run up, e.g. train 2 tasks then --init-from <2task> --tasks <12> "
+                        "-- the 2-task run is the foundation, not wasted.")
     return p.parse_args()
+
+
+def _latest_ckpt(path) -> Path:
+    p = Path(path)
+    if p.is_file():
+        return p
+    ckpts = sorted(p.glob("policy_iter*.pt"),
+                   key=lambda q: int(re.search(r"iter(\d+)", q.name).group(1)))
+    if ckpts:
+        return ckpts[-1]
+    if (p / "policy_final.pt").exists():
+        return p / "policy_final.pt"
+    raise FileNotFoundError(f"no checkpoint (policy_iter*.pt / policy_final.pt) in {p}")
 
 
 def main():
@@ -132,22 +150,21 @@ def main():
 
     classes = resolve_tasks(args.tasks)
 
-    # ---- resume vs fresh run ----
+    # ---- resume (continue same run) vs init-from (warm-start fresh run) vs fresh ----
     start_iter = 0
-    resume_ckpt = None
+    load_ckpt = None
     if args.resume_from is not None:
         out = Path(args.resume_from)
-        ckpts = sorted(out.glob("policy_iter*.pt"),
-                       key=lambda p: int(re.search(r"iter(\d+)", p.name).group(1)))
-        if not ckpts:
-            raise FileNotFoundError(f"no policy_iter*.pt in {out}")
-        resume_ckpt = ckpts[-1]
-        start_iter = int(re.search(r"iter(\d+)", resume_ckpt.name).group(1))
-        print(f"[resume] {out.name}  from {resume_ckpt.name} (iter {start_iter})", flush=True)
+        load_ckpt = _latest_ckpt(out)
+        start_iter = int(re.search(r"iter(\d+)", load_ckpt.name).group(1)) if "iter" in load_ckpt.name else 0
+        print(f"[resume] {out.name}  from {load_ckpt.name} (iter {start_iter})", flush=True)
     else:
         run_name = f"{args.tasks}_seed{args.seed}_{int(time.time())}"
         out = Path(args.out) / run_name
         out.mkdir(parents=True, exist_ok=True)
+        if args.init_from is not None:                       # warm-start a FRESH run (iter 0)
+            load_ckpt = _latest_ckpt(args.init_from)
+            print(f"[init] warm-start fresh run from {load_ckpt} (iter 0)", flush=True)
         with (out / "config.json").open("w") as f:
             json.dump(vars(args) | {"device": device, "task_classes": [c.__name__ for c in classes]}, f, indent=2)
         print(f"[run] {run_name}  device={device}  tasks={[c.__name__ for c in classes]}", flush=True)
@@ -190,9 +207,9 @@ def main():
         print(f"[policy] BatchCutPolicy batch_sizes={args.batch_sizes}", flush=True)
     else:
         policy = CircuitPolicy(hidden=args.hidden)
-    if resume_ckpt is not None:
-        policy.load_state_dict(torch.load(resume_ckpt, map_location=device))
-        print(f"[resume] loaded weights from {resume_ckpt.name}", flush=True)
+    if load_ckpt is not None:
+        policy.load_state_dict(torch.load(load_ckpt, map_location=device))
+        print(f"[load] policy weights <- {Path(load_ckpt).name}", flush=True)
     cfg = PPOConfig(
         total_iterations=args.total_iterations,
         num_steps=args.num_steps,

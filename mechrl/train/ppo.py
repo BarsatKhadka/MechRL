@@ -61,6 +61,12 @@ class PPOTrainer:
         np.random.seed(cfg.seed)
         self._next_obs = None
         self._next_done = False
+        # Per-task labels (unique, readable) for multi-task logging, keyed by bundle idx.
+        labels = [getattr(b.task, "name", None) or type(b.task).__name__ for b in env.bundles]
+        self.task_labels = [f"{l}#{i}" if labels.count(l) > 1 else l for i, l in enumerate(labels)]
+        # iters-to-finding-success per task (first iter its mean faith clears tau). Survives
+        # within a run; on resume/init the dict starts fresh (fine -- it's a per-run signal).
+        self._success_iter: dict = {}
 
     def _to_device(self, obs):
         return {k: v.to(self.device) for k, v in obs.items()}
@@ -72,7 +78,7 @@ class PPOTrainer:
         cfg = self.cfg
         obs_buf, act_buf = [], []
         logp_buf, rew_buf, done_buf, val_buf = [], [], [], []
-        ep_returns, ep_infos = [], []
+        ep_returns, ep_infos, ep_tasks = [], [], []
 
         if self._next_obs is None:
             self._next_obs = self._to_device(self.env.reset())
@@ -97,6 +103,7 @@ class PPOTrainer:
             if done:
                 ep_returns.append(ep_ret)
                 ep_infos.append(info)
+                ep_tasks.append(self.env.bundle_idx)   # task of the COMPLETING episode (before reset)
                 ep_ret = 0.0
                 nobs = self.env.reset()       # manual auto-reset
                 self._next_done = True
@@ -107,6 +114,7 @@ class PPOTrainer:
         return dict(
             obs=obs_buf, actions=act_buf, logprobs=logp_buf, rewards=rew_buf,
             dones=done_buf, values=val_buf, ep_returns=ep_returns, ep_infos=ep_infos,
+            ep_tasks=ep_tasks,
         )
 
     # ---- advantages (GAE, identical to CleanRL) ----
@@ -228,6 +236,32 @@ class PPOTrainer:
             eps = batch["ep_returns"]
             faiths = [i.get("faith", float("nan")) for i in batch["ep_infos"]]
             kepts = [i.get("kept", -1) for i in batch["ep_infos"]]
+
+            # ---- per-task breakdown (multi-task): faith/kept/return per task this iter ----
+            tau = getattr(self.env, "faith_threshold", 0.0)
+            by_task: dict = {}
+            for idx, info, r in zip(batch["ep_tasks"], batch["ep_infos"], eps):
+                d = by_task.setdefault(idx, {"faith": [], "kept": [], "ret": []})
+                d["faith"].append(info.get("faith", float("nan")))
+                d["kept"].append(info.get("kept", -1))
+                d["ret"].append(r)
+            per_task = {}
+            for idx, d in by_task.items():
+                label = self.task_labels[idx] if idx < len(self.task_labels) else str(idx)
+                f = float(np.nanmean(d["faith"])) if d["faith"] else float("nan")
+                # iters-to-finding-success: first iter this task's mean faith clears tau
+                if f >= tau and label not in self._success_iter:
+                    self._success_iter[label] = it
+                per_task[label] = {
+                    "faith": f,
+                    "kept": float(np.mean(d["kept"])) if d["kept"] else float("nan"),
+                    "return": float(np.mean(d["ret"])),
+                    "episodes": len(d["ret"]),
+                    "tau": tau,                                  # the per-task faith bar
+                    "hit_tau": bool(f >= tau),
+                    "first_success_iter": self._success_iter.get(label),
+                }
+
             rec = {
                 "iter": it,
                 "episodes": len(eps),
@@ -236,6 +270,7 @@ class PPOTrainer:
                 "kept": float(np.mean(kepts)) if kepts else float("nan"),
                 "lr": self.opt.param_groups[0]["lr"],
                 **stats,
+                "per_task": per_task,
             }
             history.append(rec)
 
@@ -248,6 +283,16 @@ class PPOTrainer:
                     f"expl_var {stats['explained_var']:+.2f}",
                     flush=True,
                 )
+                # per-task line (only meaningful when >1 task); ✓ marks faith >= tau
+                if len(self.task_labels) > 1 and per_task:
+                    parts = []
+                    for label in self.task_labels:                # stable order
+                        d = per_task.get(label)
+                        if d is None:
+                            continue
+                        mark = "✓" if d["hit_tau"] else " "
+                        parts.append(f"{label}{mark}f{d['faith']:.2f} k{d['kept']:.0f}(n{d['episodes']})")
+                    print("           └ " + " | ".join(parts), flush=True)
             if mf is not None:
                 mf.write(json.dumps(rec, default=float) + "\n")   # default=float: tolerate np scalars
                 mf.flush()
