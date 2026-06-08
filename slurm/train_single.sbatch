@@ -21,8 +21,8 @@
 
 TASK=${TASK:-IOITask}
 MARGIN=${MARGIN:-0.05}    # tau = (this task's measured ceiling) - MARGIN
-LAM=${LAM:-6}
-ITERS=${ITERS:-150}
+LAM=${LAM:-5}
+ITERS=${ITERS:-200}
 
 echo "[$(hostname)] start $(date)  TASK=$TASK MARGIN=$MARGIN LAM=$LAM ITERS=$ITERS"
 cd ~/MechRL
