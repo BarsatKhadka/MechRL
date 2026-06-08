@@ -74,12 +74,57 @@ def _numpy_5_prompt(args):
     )
 
 
+# --- NEW strong-cue variants (keep the :param/:arg field cue + 5 args + clear next
+# arg, which is what gives the base sphinx_5 its healthy KL_cut; vary only cosmetics).
+# The probe diagnosed google_5/numpy_5 as WEAK because they end in bare whitespace
+# (no field cue) -> the model isn't confident an arg name follows -> low KL_cut.
+
+def _sphinx_desc_prompt(args):
+    """sphinx :param WITH short descriptions (more realistic), strong cue kept."""
+    a, b, c, d, e = args
+    return (
+        f"def run(self, {a}, {b}, {c}, {d}, {e}):\n"
+        f'    """Execute the operation.\n\n'
+        f"    :param {b}: the {b} to use.\n"
+        f"    :param {c}: the {c} to use.\n"
+        f"    :param"
+    )
+
+
+def _func_sphinx_prompt(args):
+    """Free function (no self), different name -- surface change, strong cue kept."""
+    a, b, c, d, e = args
+    return (
+        f"def process({a}, {b}, {c}, {d}, {e}):\n"
+        f'    """summary\n'
+        f"    :param {b}:\n"
+        f"    :param {c}:\n"
+        f"    :param"
+    )
+
+
+def _arg_field_prompt(args):
+    """Use the :arg reST field instead of :param -- different surface, strong cue."""
+    a, b, c, d, e = args
+    return (
+        f"def f(self, {a}, {b}, {c}, {d}, {e}):\n"
+        f'    """summary\n'
+        f"    :arg {b}:\n"
+        f"    :arg {c}:\n"
+        f"    :arg"
+    )
+
+
 # Each variant: (prompt_builder, number_of_args)
 DOCSTRING_TEMPLATES = {
     "sphinx_7":     (_sphinx_7_prompt, 7),
     "google_5":     (_google_5_prompt, 5),
     "class_sphinx": (_class_sphinx_prompt, 5),
     "numpy_5":      (_numpy_5_prompt, 5),
+    # new strong-cue variants:
+    "sphinx_desc":  (_sphinx_desc_prompt, 5),
+    "func_sphinx":  (_func_sphinx_prompt, 5),
+    "arg_field":    (_arg_field_prompt, 5),
 }
 
 
@@ -180,10 +225,26 @@ class DocstringGPT2Numpy5Task(DocstringVariantTask):
     def __init__(self, **kwargs):
         super().__init__(variant="numpy_5", **kwargs)
 
+# new strong-cue variants (keep :param/:arg field cue -> healthy KL_cut)
+class DocstringSphinxDescTask(DocstringVariantTask):
+    def __init__(self, **kwargs):
+        super().__init__(variant="sphinx_desc", **kwargs)
+
+class DocstringFuncSphinxTask(DocstringVariantTask):
+    def __init__(self, **kwargs):
+        super().__init__(variant="func_sphinx", **kwargs)
+
+class DocstringArgFieldTask(DocstringVariantTask):
+    def __init__(self, **kwargs):
+        super().__init__(variant="arg_field", **kwargs)
+
 
 DOCSTRING_VARIANT_CLASSES = [
     DocstringGPT2Sphinx7Task,
     DocstringGPT2Google5Task,
     DocstringGPT2ClassSphinxTask,
     DocstringGPT2Numpy5Task,
+    DocstringSphinxDescTask,
+    DocstringFuncSphinxTask,
+    DocstringArgFieldTask,
 ]

@@ -118,6 +118,21 @@ def main():
                                          real_text=True, device=device), ks, args.force)
             except Exception as e:
                 print(f"Induction REALTEXT hl={hl:<3} FAILED  {type(e).__name__}: {e}", flush=True)
+        # Docstring: NEW strong-cue variants (keep :param/:arg field) vs the working base.
+        from mechrl.tasks import DocstringGPT2Task
+        from mechrl.tasks.docstring_variants import DocstringVariantTask
+        try:
+            _probe_one("Docstring BASE sphinx_5",
+                       DocstringGPT2Task(num_examples=max(args.num_examples, 50), device=device), ks, args.force)
+        except Exception as e:
+            print(f"Docstring BASE FAILED  {type(e).__name__}: {e}", flush=True)
+        for v in ("class_sphinx", "sphinx_desc", "func_sphinx", "arg_field"):
+            try:
+                _probe_one(f"Docstring {v}",
+                           DocstringVariantTask(variant=v, num_examples=max(args.num_examples, 50),
+                                                device=device), ks, args.force)
+            except Exception as e:
+                print(f"Docstring {v:<12} FAILED  {type(e).__name__}: {e}", flush=True)
 
     print("\nRead: KL_cut<1.5 => weak counterfactual (fix the corrupted prompt). "
           "KL_cut healthy but faith low at K=3000 yet ~1.0 at K=ALL => diffuse "
