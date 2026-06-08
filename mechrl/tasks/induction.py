@@ -80,6 +80,49 @@ def _safe_token_pool(tokenizer, n_candidates: int = 2000) -> list[int]:
     return pool
 
 
+# A chunk of ordinary in-distribution English. Real CONTIGUOUS token spans (not
+# random gibberish) are processed by GPT-2's normal machinery, so its induction
+# heads form a sparser circuit. We repeat a span and predict its last token; the
+# corrupted prompt swaps the FIRST span (so the copy source is gone). Whether this
+# keeps KL_cut healthy (induction-dependent) or collapses (LM predicts it anyway)
+# is exactly what the probe measures.
+_REAL_TEXT = (
+    " The old lighthouse stood on the rocky cliff above the harbor, its white tower "
+    "weathered by decades of salt wind and winter storms. Every evening the keeper "
+    "climbed the narrow spiral staircase to light the great lamp, and every morning "
+    "he descended again to record the passing ships in his leather logbook. Sailors "
+    "far out at sea looked for that steady beam through the fog, knowing it marked "
+    "the safe channel between the hidden reefs. The town below depended on the trade "
+    "those ships carried, and so the keeper took great pride in his lonely work, "
+    "never once letting the light fail in forty years of faithful service to the coast."
+)
+
+
+def _build_induction_batch_realtext(
+    model: HookedTransformer, batch_size: int, half_len: int, seed: int, device: str,
+):
+    """Induction on CONTIGUOUS real-text spans (in-distribution), same structure:
+    clean=[span | span[:-1]] predict span[-1]; corrupt=[other_span | span[:-1]]."""
+    tokenizer = model.tokenizer
+    toks = tokenizer(_REAL_TEXT, add_special_tokens=False)["input_ids"]
+    if len(toks) < 2 * half_len + 2:
+        raise RuntimeError(f"_REAL_TEXT too short for half_len={half_len}")
+    g = torch.Generator().manual_seed(seed)
+    clean_seqs, corrupt_seqs, labels = [], [], []
+    for _ in range(batch_size):
+        a = int(torch.randint(0, len(toks) - half_len, (1,), generator=g).item())
+        b = int(torch.randint(0, len(toks) - half_len, (1,), generator=g).item())
+        while abs(b - a) < half_len:                          # ensure spans differ
+            b = int(torch.randint(0, len(toks) - half_len, (1,), generator=g).item())
+        first = torch.tensor(toks[a:a + half_len], dtype=torch.long)
+        other = torch.tensor(toks[b:b + half_len], dtype=torch.long)
+        clean_seqs.append(torch.cat([first, first[:-1]]))
+        corrupt_seqs.append(torch.cat([other, first[:-1]]))
+        labels.append(first[-1].item())
+    return (torch.stack(clean_seqs).to(device), torch.stack(corrupt_seqs).to(device),
+            torch.tensor(labels, dtype=torch.long, device=device))
+
+
 def _build_induction_batch(
     model: HookedTransformer,
     batch_size: int,
@@ -159,17 +202,22 @@ class InductionTask(Task):
         half_len: int = 8,
         device: str = "cpu",
         seed: int = 0,
+        real_text: bool = False,
     ):
         super().__init__(num_examples=num_examples, device=device, seed=seed)
         self.half_len = half_len
+        # real_text=True: contiguous in-distribution spans (experiment to make the
+        # circuit sparse); False: random "safe" tokens (legacy, diffuse on GPT-2).
+        self.real_text = real_text
 
     def _build(self) -> None:
         model = load_gpt2_small(device=self.device)
+        build = _build_induction_batch_realtext if self.real_text else _build_induction_batch
 
-        clean_v, corrupt_v, labels_v = _build_induction_batch(
+        clean_v, corrupt_v, labels_v = build(
             model, self.num_examples, self.half_len, seed=self.seed, device=self.device
         )
-        clean_t, corrupt_t, labels_t = _build_induction_batch(
+        clean_t, corrupt_t, labels_t = build(
             model, self.num_examples, self.half_len, seed=self.seed + 1, device=self.device
         )
 

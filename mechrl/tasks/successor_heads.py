@@ -84,6 +84,7 @@ def _build_successor_batch(
     batch_size: int,
     seed: int,
     device: str,
+    only_category: str = None,
 ):
     """Generate clean & corrupted prompts.
 
@@ -92,10 +93,19 @@ def _build_successor_batch(
       - Clean: template formatted with sequence[i], correct answer = sequence[i+1]
       - Corrupted: template formatted with sequence[j], j chosen so j+1 != i+1
       - Wrong-label (for logit-diff metric) = sequence[j+1] (corrupted's correct)
+
+    only_category: restrict to ONE category ("days"/"months"/"numbers") so every
+    prompt is the SAME length -> no cross-category EOS left-padding (which round-trips
+    through to_string and swamps the signal -> KL_cut ~0.02, the diagnosed artifact).
     """
     tokenizer = model.tokenizer
     rng = random.Random(seed)
     categories = _prepare_categories(tokenizer)
+    if only_category is not None:
+        key = {"days": "day", "months": "month", "numbers": "number"}.get(only_category, only_category)
+        categories = [(t, s) for (t, s) in categories if key in t]
+        if not categories:
+            raise RuntimeError(f"category {only_category!r} not available after filtering.")
 
     if not categories:
         raise RuntimeError("No category has enough single-token elements.")
@@ -167,17 +177,23 @@ class SuccessorHeadsTask(Task):
 
     name = "successor_heads"
 
-    def __init__(self, num_examples: int = 50, device: str = "cpu", seed: int = 0):
+    def __init__(self, num_examples: int = 50, device: str = "cpu", seed: int = 0,
+                 only_category: str = None):
         super().__init__(num_examples=num_examples, device=device, seed=seed)
+        # only_category="months"/"days"/"numbers" -> uniform-length prompts, no EOS
+        # padding (the diagnosed KL_cut~0.02 artifact). None = mixed (legacy).
+        self.only_category = only_category
 
     def _build(self) -> None:
         model = load_gpt2_small(device=self.device)
 
         clean_v, corrupt_v, correct_v, wrong_v = _build_successor_batch(
-            model, self.num_examples, seed=self.seed, device=self.device
+            model, self.num_examples, seed=self.seed, device=self.device,
+            only_category=self.only_category,
         )
         clean_t, corrupt_t, correct_t, wrong_t = _build_successor_batch(
-            model, self.num_examples, seed=self.seed + 1, device=self.device
+            model, self.num_examples, seed=self.seed + 1, device=self.device,
+            only_category=self.only_category,
         )
 
         self._model = model

@@ -27,8 +27,14 @@ import torch
 
 from mechrl.env import AblationEngine, Prefilter, build_graph
 from mechrl.env.shared_model import build_shared_gpt2, use_shared_gpt2
-from mechrl.tasks import InductionTask
+from mechrl.tasks import InductionTask, SuccessorHeadsTask
 from mechrl.train.train_agent import resolve_tasks
+
+
+def _probe_one(label, task, ks, force):
+    graph = build_graph(task.model)
+    engine = AblationEngine(task, graph, metric_type="kl")
+    _row(label, engine, graph, ks, force=force)
 
 
 def _row(name, engine, graph, ks, force=False):
@@ -91,6 +97,27 @@ def main():
                         _row(f"Induction hl={half_len} n={nex} seq={2*half_len-1}", engine, graph, ks, force=args.force)
                     except Exception as e:
                         print(f"Induction hl={half_len} n={nex:<4} FAILED  {type(e).__name__}: {e}", flush=True)
+
+        # --- Fix experiments (the actual point of this run) ---
+        print("\n=== Part 3: FIX experiments ===")
+        print(f"{'config':30s} {'fullKL':>12s} {'KL_cut':>9s}    " + "".join(f"K={k:<6}" for k in [3000, 8000, 16000, 'ALL']))
+        print("-" * len(hdr))
+        # Successor: single category -> uniform length, NO EOS padding (test the artifact)
+        for cat in ("months", "days", "numbers"):
+            try:
+                _probe_one(f"Successor cat={cat}",
+                           SuccessorHeadsTask(num_examples=max(args.num_examples, 40),
+                                              only_category=cat, device=device), ks, args.force)
+            except Exception as e:
+                print(f"Successor cat={cat:<8} FAILED  {type(e).__name__}: {e}", flush=True)
+        # Induction: contiguous real text (in-distribution) instead of random gibberish
+        for hl in (8, 16, 25):
+            try:
+                _probe_one(f"Induction REALTEXT hl={hl}",
+                           InductionTask(num_examples=args.num_examples, half_len=hl,
+                                         real_text=True, device=device), ks, args.force)
+            except Exception as e:
+                print(f"Induction REALTEXT hl={hl:<3} FAILED  {type(e).__name__}: {e}", flush=True)
 
     print("\nRead: KL_cut<1.5 => weak counterfactual (fix the corrupted prompt). "
           "KL_cut healthy but faith low at K=3000 yet ~1.0 at K=ALL => diffuse "
