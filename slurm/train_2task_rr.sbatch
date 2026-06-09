@@ -14,7 +14,8 @@
 #SBATCH --exclude=node049
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=08:00:00
+#SBATCH --time=0                 # 0 = UNLIMITED walltime (gpuq allows it). If SLURM
+                                 # rejects, set the partition max (sinfo -p gpuq -o "%l").
 #SBATCH --output=mechrl_2task_rr.%j.out
 #SBATCH --error=mechrl_2task_rr.%j.err
 
