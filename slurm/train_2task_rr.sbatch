@@ -14,10 +14,10 @@
 #SBATCH --partition=gpuq
 #SBATCH --gres=gpu:1
 #SBATCH --exclude=node049
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
-#SBATCH --time=0                 # 0 = UNLIMITED walltime (gpuq allows it). If SLURM
-                                 # rejects, set the partition max (sinfo -p gpuq -o "%l").
+#SBATCH --cpus-per-task=2        # small footprint -> backfills into gaps -> starts sooner
+#SBATCH --mem=12G
+#SBATCH --time=04:00:00          # BOUNDED (not unlimited) so the backfill scheduler can
+                                 # slot it into a short gap instead of waiting on priority.
 #SBATCH --output=mechrl_2task_rr.%j.out
 #SBATCH --error=mechrl_2task_rr.%j.err
 
@@ -30,7 +30,7 @@ python -m mechrl.train.train_agent --policy batch \
     --tasks IOITask,GreaterThanOriginal --num-examples 20 \
     --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
     --round-robin \
-    --step-budget 150 --num-steps 512 --total-iterations 300 \
+    --step-budget 150 --num-steps 512 --total-iterations 200 \
     --device cuda --out runs
 
 echo "[$(hostname)] done $(date)"
