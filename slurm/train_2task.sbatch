@@ -27,12 +27,13 @@ cd ~/MechRL
 source venv/bin/activate
 python -c "import torch; print('cuda?', torch.cuda.is_available())"
 
-# lambda=5 + per-task ADVANTAGE NORM (auto-ON for multi-task) -> fixes GreaterThan
-# overshadowing IOI. Per-task tau from each ceiling (--faith-margin 0.05). 300 iters.
-# THE test: does IOI now climb to its ~0.90 bar (✓) instead of parking at ~0.80?
+# lambda=5, standard mixed PPO (no round-robin, no per-task adv-norm). THE fix:
+# --faith-margin 0 => tau = each task's CEILING (margin 0.05 put IOI's bar BELOW its
+# faith cliff -> it slid to 0.77; margin 0 is the Aquaman-proven setting that held 0.91).
+# THE test: does IOI now lock ~0.91 (✓) instead of parking at ~0.77-0.80?
 python -m mechrl.train.train_agent --policy batch \
     --tasks IOITask,GreaterThanOriginal --num-examples 20 \
-    --batch-sizes 1 3 10 30 --faith-margin 0.05 --threshold-penalty 5 \
+    --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
     --step-budget 150 --num-steps 512 --total-iterations 300 \
     --device cuda --out runs
 
