@@ -1,9 +1,11 @@
 #!/bin/bash
-# 2-TASK ROUND-ROBIN: train ONE task per iteration (IOI, GreaterThan, IOI, ...) so each
-# update is single-task-clean -- no cross-task mixing, no overshadowing, no adv-norm noise.
-# THE diagnostic: does IOI reach its ~0.90 bar SMOOTHLY (like the single-task runs) when it
-# gets clean un-mixed updates? If yes -> mixing was the culprit. Watch the per-task "└" line:
-# on IOI iters only IOI shows, on GreaterThan iters only GreaterThan -- each should climb.
+# 2-TASK ROUND-ROBIN @ MARGIN 0 -- the A/B vs mixed-margin-0 (the untested cell).
+# Train ONE task per iteration (IOI, GreaterThan, IOI, ...) so each update is single-task
+# clean -- no cross-task mixing. faith-margin 0 = correct bar (tau=ceiling). THE test:
+# mixed-margin-0 settled IOI ~0.83 (below single-task's 0.91). Does round-robin (clean
+# per-task gradients) recover IOI toward ~0.91? If yes -> multi-task interference WAS the
+# gap, schedule matters. If it also lands ~0.83 -> IOI just gives up a bit in multi-task.
+# Watch the per-task "└" line: IOI iters show only IOI, GreaterThan iters only GreaterThan.
 #
 # Pull first:  cd ~/MechRL && git pull
 # Submit:  sbatch slurm/train_2task_rr.sbatch
@@ -26,7 +28,7 @@ python -c "import torch; print('cuda?', torch.cuda.is_available())"
 
 python -m mechrl.train.train_agent --policy batch \
     --tasks IOITask,GreaterThanOriginal --num-examples 20 \
-    --batch-sizes 1 3 10 30 --faith-margin 0.05 --threshold-penalty 5 \
+    --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
     --round-robin \
     --step-budget 150 --num-steps 512 --total-iterations 300 \
     --device cuda --out runs
