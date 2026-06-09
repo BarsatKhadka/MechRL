@@ -47,6 +47,8 @@ class PPOConfig:
     norm_adv: bool = True
     per_task_adv_norm: bool = False   # multi-task: whiten advantages PER TASK so a
                                       # high-reward task can't overshadow a low one
+    round_robin: bool = False         # multi-task: train ONE task per iteration
+                                      # (cycling) -> single-task-clean updates, no mixing
     anneal_lr: bool = True
     target_kl: Optional[float] = None
     seed: int = 0
@@ -63,6 +65,7 @@ class PPOTrainer:
         np.random.seed(cfg.seed)
         self._next_obs = None
         self._next_done = False
+        self._forced_bundle = None   # round-robin: which bundle this iteration trains on
         # Per-task labels (unique, readable) for multi-task logging, keyed by bundle idx.
         labels = [getattr(b.task, "name", None) or type(b.task).__name__ for b in env.bundles]
         self.task_labels = [f"{l}#{i}" if labels.count(l) > 1 else l for i, l in enumerate(labels)]
@@ -84,7 +87,7 @@ class PPOTrainer:
         step_tasks = []   # per-STEP task (bundle idx) for per-task advantage norm
 
         if self._next_obs is None:
-            self._next_obs = self._to_device(self.env.reset())
+            self._next_obs = self._to_device(self.env.reset(self._forced_bundle))
             self._next_done = False
 
         ep_ret = 0.0
@@ -109,7 +112,7 @@ class PPOTrainer:
                 ep_infos.append(info)
                 ep_tasks.append(self.env.bundle_idx)   # task of the COMPLETING episode (before reset)
                 ep_ret = 0.0
-                nobs = self.env.reset()       # manual auto-reset
+                nobs = self.env.reset(self._forced_bundle)   # manual auto-reset (round-robin honors forced task)
                 self._next_done = True
             else:
                 self._next_done = False
@@ -234,6 +237,12 @@ class PPOTrainer:
             if cfg.anneal_lr:
                 frac = 1.0 - (it - 1.0) / cfg.total_iterations
                 self.opt.param_groups[0]["lr"] = frac * cfg.learning_rate
+
+            # Round-robin: this whole iteration trains on ONE task (cycling), so the
+            # update is single-task-clean (no cross-task mixing). Fresh start each iter.
+            if cfg.round_robin and len(self.env.bundles) > 1:
+                self._forced_bundle = (it - 1) % len(self.env.bundles)
+                self._next_obs = None
 
             batch = self.collect()
             adv, ret, val = self.compute_gae(batch["rewards"], batch["values"], batch["dones"])

@@ -120,6 +120,10 @@ def parse_args():
     p.add_argument("--per-task-adv-norm", action="store_true",
                    help="whiten advantages PER TASK so a high-reward task can't overshadow a "
                         "low one (multi-task). Auto-enabled when >1 task; this forces it on.")
+    p.add_argument("--round-robin", action="store_true",
+                   help="train ONE task per iteration (cycling) instead of mixing tasks in each "
+                        "update -> single-task-clean gradients, no overshadowing. Watch for "
+                        "forgetting between a task's turns (grows with task count).")
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--policy", choices=["flat", "batch"], default="flat",
@@ -229,8 +233,9 @@ def main():
     if load_ckpt is not None:
         policy.load_state_dict(torch.load(load_ckpt, map_location=device))
         print(f"[load] policy weights <- {Path(load_ckpt).name}", flush=True)
-    # Per-task advantage norm: auto-ON for multi-task (>1 task), or forced by the flag.
-    per_task_adv_norm = args.per_task_adv_norm or (len(bundles) > 1)
+    # Round-robin trains one task/iter (single-task-clean), so cross-task adv-norm is
+    # moot -> use standard norm. Otherwise auto-ON per-task adv-norm for multi-task.
+    per_task_adv_norm = (not args.round_robin) and (args.per_task_adv_norm or len(bundles) > 1)
     cfg = PPOConfig(
         total_iterations=args.total_iterations,
         num_steps=args.num_steps,
@@ -241,8 +246,11 @@ def main():
         gamma=args.gamma,
         seed=args.seed,
         per_task_adv_norm=per_task_adv_norm,
+        round_robin=args.round_robin,
     )
-    if per_task_adv_norm:
+    if args.round_robin and len(bundles) > 1:
+        print(f"  [round-robin] one task per iteration, cycling {len(bundles)} tasks", flush=True)
+    elif per_task_adv_norm:
         print(f"  [adv-norm] per-task advantage normalization ON ({len(bundles)} tasks)", flush=True)
     trainer = PPOTrainer(env, policy, cfg, device=device)
 
