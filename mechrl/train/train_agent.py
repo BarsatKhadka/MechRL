@@ -117,6 +117,9 @@ def parse_args():
     p.add_argument("--update-epochs", type=int, default=4)
     p.add_argument("--lr", type=float, default=2.5e-4)
     p.add_argument("--ent-coef", type=float, default=0.01)
+    p.add_argument("--per-task-adv-norm", action="store_true",
+                   help="whiten advantages PER TASK so a high-reward task can't overshadow a "
+                        "low one (multi-task). Auto-enabled when >1 task; this forces it on.")
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--policy", choices=["flat", "batch"], default="flat",
@@ -226,6 +229,8 @@ def main():
     if load_ckpt is not None:
         policy.load_state_dict(torch.load(load_ckpt, map_location=device))
         print(f"[load] policy weights <- {Path(load_ckpt).name}", flush=True)
+    # Per-task advantage norm: auto-ON for multi-task (>1 task), or forced by the flag.
+    per_task_adv_norm = args.per_task_adv_norm or (len(bundles) > 1)
     cfg = PPOConfig(
         total_iterations=args.total_iterations,
         num_steps=args.num_steps,
@@ -235,7 +240,10 @@ def main():
         ent_coef=args.ent_coef,
         gamma=args.gamma,
         seed=args.seed,
+        per_task_adv_norm=per_task_adv_norm,
     )
+    if per_task_adv_norm:
+        print(f"  [adv-norm] per-task advantage normalization ON ({len(bundles)} tasks)", flush=True)
     trainer = PPOTrainer(env, policy, cfg, device=device)
 
     print(f"[train] {args.total_iterations} iterations x {args.num_steps} steps "

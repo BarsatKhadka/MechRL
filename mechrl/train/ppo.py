@@ -45,6 +45,8 @@ class PPOConfig:
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     norm_adv: bool = True
+    per_task_adv_norm: bool = False   # multi-task: whiten advantages PER TASK so a
+                                      # high-reward task can't overshadow a low one
     anneal_lr: bool = True
     target_kl: Optional[float] = None
     seed: int = 0
@@ -79,6 +81,7 @@ class PPOTrainer:
         obs_buf, act_buf = [], []
         logp_buf, rew_buf, done_buf, val_buf = [], [], [], []
         ep_returns, ep_infos, ep_tasks = [], [], []
+        step_tasks = []   # per-STEP task (bundle idx) for per-task advantage norm
 
         if self._next_obs is None:
             self._next_obs = self._to_device(self.env.reset())
@@ -87,6 +90,7 @@ class PPOTrainer:
         ep_ret = 0.0
         for _ in range(cfg.num_steps):
             obs = self._next_obs
+            step_tasks.append(self.env.bundle_idx)   # task this obs belongs to
             with torch.no_grad():
                 a, logp, _, val = self.policy.act(obs)
 
@@ -114,7 +118,7 @@ class PPOTrainer:
         return dict(
             obs=obs_buf, actions=act_buf, logprobs=logp_buf, rewards=rew_buf,
             dones=done_buf, values=val_buf, ep_returns=ep_returns, ep_infos=ep_infos,
-            ep_tasks=ep_tasks,
+            ep_tasks=ep_tasks, step_tasks=step_tasks,
         )
 
     # ---- advantages (GAE, identical to CleanRL) ----
@@ -166,9 +170,11 @@ class PPOTrainer:
                 mb = inds[start:start + mb_size]
                 n = len(mb)
 
-                # advantage normalization across the minibatch (no forward needed)
+                # advantage normalization across the minibatch (no forward needed).
+                # Skipped when per_task_adv_norm already whitened advantages per task
+                # over the full rollout (re-normalizing the mixed minibatch would undo it).
                 mb_adv = b_adv[torch.as_tensor(mb)]
-                if cfg.norm_adv and mb_adv.numel() > 1:
+                if cfg.norm_adv and not cfg.per_task_adv_norm and mb_adv.numel() > 1:
                     mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
                 # Per-sample forward + backward with gradient ACCUMULATION. The batch
@@ -231,6 +237,16 @@ class PPOTrainer:
 
             batch = self.collect()
             adv, ret, val = self.compute_gae(batch["rewards"], batch["values"], batch["dones"])
+            # Per-task advantage normalization: whiten EACH task's advantages to
+            # zero-mean/unit-var so a high-reward/high-variance task (e.g. GreaterThan)
+            # can't shrink or overshadow a low one (e.g. IOI) in the shared update.
+            if cfg.per_task_adv_norm:
+                st = torch.tensor(batch["step_tasks"], device=self.device)
+                for t in torch.unique(st):
+                    idx = (st == t).nonzero(as_tuple=True)[0]
+                    if idx.numel() > 1:
+                        a = adv[idx]
+                        adv[idx] = (a - a.mean()) / (a.std() + 1e-8)
             stats = self.update(batch, adv, ret, val)
 
             eps = batch["ep_returns"]
