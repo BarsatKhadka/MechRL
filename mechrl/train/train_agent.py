@@ -233,9 +233,10 @@ def main():
     if load_ckpt is not None:
         policy.load_state_dict(torch.load(load_ckpt, map_location=device))
         print(f"[load] policy weights <- {Path(load_ckpt).name}", flush=True)
-    # Round-robin trains one task/iter (single-task-clean), so cross-task adv-norm is
-    # moot -> use standard norm. Otherwise auto-ON per-task adv-norm for multi-task.
-    per_task_adv_norm = (not args.round_robin) and (args.per_task_adv_norm or len(bundles) > 1)
+    # Per-task adv-norm is OPT-IN (--per-task-adv-norm). It wasn't the IOI fix (the bar
+    # margin was) and it added gradient noise, so default = standard mixed PPO norm.
+    # Moot under round-robin (single task/iter). Re-enable if a task gets overshadowed.
+    per_task_adv_norm = (not args.round_robin) and args.per_task_adv_norm
     cfg = PPOConfig(
         total_iterations=args.total_iterations,
         num_steps=args.num_steps,
