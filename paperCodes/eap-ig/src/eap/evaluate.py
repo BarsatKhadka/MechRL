@@ -7,7 +7,7 @@ from transformer_lens import HookedTransformer
 from tqdm import tqdm
 from einops import einsum
 
-from .utils import tokenize_plus, make_hooks_and_matrices, compute_mean_activations
+from .utils import tokenize_plus, make_hooks_and_matrices, compute_mean_activations, compute_mean_std_activations
 from .graph import Graph, AttentionNode
 
 
@@ -37,8 +37,8 @@ def evaluate_graph(model: HookedTransformer, graph: Graph, dataloader: DataLoade
     if model.cfg.n_key_value_heads is not None:
         assert model.cfg.ungroup_grouped_query_attention, "Model must be configured to ungroup grouped attention (model.cfg.ungroup_grouped_attention)"
         
-    assert intervention in ['patching', 'zero', 'mean', 'mean-positional'], f"Invalid intervention: {intervention}"
-    
+    assert intervention in ['patching', 'zero', 'mean', 'mean-positional', 'noise'], f"Invalid intervention: {intervention}"
+
     if 'mean' in intervention:
         assert intervention_dataloader is not None, "Intervention dataloader must be provided for mean interventions"
         per_position = 'positional' in intervention
@@ -46,6 +46,14 @@ def evaluate_graph(model: HookedTransformer, graph: Graph, dataloader: DataLoade
         means = means.unsqueeze(0)
         if not per_position:
             means = means.unsqueeze(0)
+    elif intervention == 'noise':
+        # IBCircuit-style ablation: replace a cut edge's activation with Gaussian noise
+        # eps ~ N(mean, std^2), per-component (mean/std from the dataset). Task-agnostic --
+        # no corrupted counterfactual needed. Fresh noise each call (not cached).
+        assert intervention_dataloader is not None, "Intervention dataloader must be provided for noise"
+        means, stds = compute_mean_std_activations(model, graph, intervention_dataloader)
+        means = means.unsqueeze(0).unsqueeze(0)   # (1, 1, n_forward, d_model)
+        stds = stds.unsqueeze(0).unsqueeze(0)
 
     # This step cleans up the graph, removing components until it's fully connected
     graph.prune()
@@ -230,6 +238,9 @@ def evaluate_graph(model: HookedTransformer, graph: Graph, dataloader: DataLoade
                     # but in mean ablations, we need to add the mean in
                     if 'mean' in intervention:
                         activation_difference += means
+                    elif intervention == 'noise':
+                        # cut-edge activation -> mean + std*randn (fresh Gaussian noise)
+                        activation_difference += means + stds * torch.randn_like(activation_difference)
                 # activation_difference now holds the corrupted activations (clean not yet
                 # subtracted) — exactly what later calls need. Cache it.
                 if can_cache:

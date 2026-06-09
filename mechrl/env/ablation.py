@@ -204,17 +204,27 @@ class AblationEngine:
             self._corrupted_baseline = self.run_with_mask(self.all_cut_mask())
         return self._corrupted_baseline
 
-    def faithfulness(self, mask: torch.Tensor) -> float:
+    def cut_baseline(self, intervention: str = "patching") -> float:
+        """All-edges-cut score under a given intervention (the faith denominator)."""
+        if intervention == "patching":
+            return self.corrupted_baseline()
+        return self.run_with_mask(self.all_cut_mask(), intervention=intervention)
+
+    def faithfulness(self, mask: torch.Tensor, intervention: str = "patching") -> float:
         """Normalized faithfulness in [0, 1] regardless of task's metric sign/scale.
 
         formula:  (score - cut_baseline) / (full_baseline - cut_baseline)
             1.0 = matches full model exactly
             0.0 = same as all-cut (no useful information preserved)
             negative = catastrophic (worse than all-cut)
+
+        intervention: how cut edges are ablated. 'patching' (default) = corrupted-prompt
+        activations (needs a good counterfactual). 'mean'/'noise' = task-agnostic (no
+        counterfactual): mean activation, or IBCircuit-style Gaussian noise N(mean, std^2).
         """
-        score = self.run_with_mask(mask)
+        score = self.run_with_mask(mask, intervention=intervention)
         full = self.full_baseline()
-        cut = self.corrupted_baseline()
+        cut = self.cut_baseline(intervention)
         denom = full - cut
         if abs(denom) < 1e-8:
             return 0.0  # degenerate task — full ≈ cut means no signal exists
@@ -243,13 +253,14 @@ class AblationEngine:
         self._apply_mask(mask)
         # Only 'patching' has a mask-independent corrupted pass worth caching.
         cache = self._corrupted_cache if (self.use_corrupted_cache and intervention == "patching") else None
+        needs_loader = ("mean" in intervention) or (intervention == "noise")
         return evaluate_graph(
             self.task.model,
             self.graph,
             self.dataloader,
             self.metric,
             intervention=intervention,
-            intervention_dataloader=self.dataloader if "mean" in intervention else None,
+            intervention_dataloader=self.dataloader if needs_loader else None,
             quiet=True,
             corrupted_cache=cache,
         ).mean().item()

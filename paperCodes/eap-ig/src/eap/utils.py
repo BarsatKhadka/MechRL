@@ -206,3 +206,54 @@ def compute_mean_activations(model: HookedTransformer, graph: Graph, dataloader:
     means = means.squeeze(0)
     means /= total
     return means if per_position else means.mean(0)
+
+
+def compute_mean_std_activations(model: HookedTransformer, graph: Graph, dataloader: DataLoader):
+    """Mean AND std of each node's activation over a dataset (at the prediction position).
+
+    Mirrors compute_mean_activations (non-per-position) but also accumulates the sum of
+    squares, so std = sqrt(E[x^2] - E[x]^2). Used by the 'noise' intervention to inject
+    distribution-matched Gaussian noise eps ~ N(mean, std^2) (IBCircuit, arXiv:2602.22581).
+    Returns (mean, std), each of shape (graph.n_forward, model.cfg.d_model).
+    """
+    def activation_hook(index, activations, hook, sums=None, sqs=None, input_lengths=None):
+        acts = activations.detach()
+        mask = torch.zeros_like(activations)
+        mask[torch.arange(activations.size(0)), input_lengths - 1] = 1
+        item = einsum(acts, mask, 'batch pos ... hidden, batch pos ... hidden -> batch ... hidden')
+        if len(item.size()) == 3:
+            item /= input_lengths.unsqueeze(-1).unsqueeze(-1)
+        else:
+            item /= input_lengths.unsqueeze(-1)
+        sums[index] += item.sum(0)
+        sqs[index] += (item ** 2).sum(0)
+
+    processed_attn_layers = set()
+    hook_points_indices = []
+    for node in graph.nodes.values():
+        if isinstance(node, AttentionNode):
+            if node.layer in processed_attn_layers:
+                continue
+            processed_attn_layers.add(node.layer)
+        if not isinstance(node, LogitNode):
+            hook_points_indices.append((node.out_hook, graph.forward_index(node)))
+
+    sums = sqs = None
+    total = 0
+    for batch in tqdm(dataloader, desc='Computing mean/std'):
+        batch_inputs = batch[0] if isinstance(batch, tuple) else batch
+        tokens, attention_mask, input_lengths, n_pos = tokenize_plus(model, batch_inputs, max_length=512)
+        total += len(batch_inputs)
+        if sums is None:
+            shape = (graph.n_forward, model.cfg.d_model)
+            sums = torch.zeros(shape, device=model.cfg.device, dtype=model.cfg.dtype)
+            sqs = torch.zeros(shape, device=model.cfg.device, dtype=model.cfg.dtype)
+        hooks = [(hp, partial(activation_hook, idx, sums=sums, sqs=sqs, input_lengths=input_lengths))
+                 for hp, idx in hook_points_indices]
+        with model.hooks(fwd_hooks=hooks):
+            model(tokens, attention_mask=attention_mask)
+
+    mean = sums / total
+    var = (sqs / total) - mean ** 2
+    std = var.clamp(min=0).sqrt()
+    return mean, std
