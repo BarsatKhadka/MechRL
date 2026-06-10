@@ -49,6 +49,9 @@ class PPOConfig:
                                       # high-reward task can't overshadow a low one
     round_robin: bool = False         # multi-task: train ONE task per iteration
                                       # (cycling) -> single-task-clean updates, no mixing
+    pcgrad: bool = False              # multi-task: PCGrad gradient surgery -- project out
+                                      # conflicting per-task gradient components (Yu et al.
+                                      # 2020) so a dominating task can't steamroll another
     anneal_lr: bool = True
     target_kl: Optional[float] = None
     seed: int = 0
@@ -162,6 +165,7 @@ class PPOTrainer:
         b_adv = advantages
         b_ret = returns
         b_val = values
+        b_step_tasks = batch.get("step_tasks")
 
         mb_size = max(1, T // cfg.num_minibatches)
         inds = np.arange(T)
@@ -179,6 +183,14 @@ class PPOTrainer:
                 mb_adv = b_adv[torch.as_tensor(mb)]
                 if cfg.norm_adv and not cfg.per_task_adv_norm and mb_adv.numel() > 1:
                     mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
+
+                # PCGrad: compute each task's gradient separately, de-conflict (project out
+                # conflicting components), then step. Resolves the "GreaterThan steamrolls IOI"
+                # gradient conflict directly. Logs grad_cos (avg pairwise cosine).
+                if cfg.pcgrad and b_step_tasks is not None:
+                    last = self._pcgrad_step(mb, mb_adv, b_obs, b_actions, b_logprobs, b_ret, b_step_tasks, n)
+                    approx_kl = last["approx_kl"]
+                    continue
 
                 # Per-sample forward + backward with gradient ACCUMULATION. The batch
                 # policy's evaluate() replays N autoregressive forwards per step, so
@@ -222,6 +234,78 @@ class PPOTrainer:
         var_y = np.var(y_true)
         last["explained_var"] = float("nan") if var_y == 0 else float(1 - np.var(y_true - y_pred) / var_y)
         return last
+
+    # ---- PCGrad (gradient surgery, Yu et al. 2020) ----
+
+    def _flat_grad(self) -> torch.Tensor:
+        """Flatten the policy's current .grad into one vector."""
+        return torch.cat([
+            (p.grad.flatten() if p.grad is not None else torch.zeros(p.numel(), device=self.device))
+            for p in self.policy.parameters()])
+
+    def _set_flat_grad(self, flat: torch.Tensor) -> None:
+        """Write a flat gradient vector back into the policy's .grad."""
+        off = 0
+        for p in self.policy.parameters():
+            ne = p.numel()
+            p.grad = flat[off:off + ne].view_as(p).clone()
+            off += ne
+
+    def _pcgrad_combine(self, grads):
+        """Project out conflicting components, return (combined_grad, avg_pairwise_cosine).
+        Algorithm 1: for each task i, for each other task j (random order), if g_i·g_j < 0,
+        subtract g_i's projection onto g_j. Sum the de-conflicted gradients."""
+        n = len(grads)
+        if n == 1:
+            return grads[0], float("nan")
+        coss = [float(torch.dot(grads[a], grads[b]) / (grads[a].norm() * grads[b].norm() + 1e-12))
+                for a in range(n) for b in range(a + 1, n)]
+        pc = [g.clone() for g in grads]
+        for i in range(n):
+            order = [j for j in range(n) if j != i]
+            np.random.shuffle(order)
+            for j in order:
+                gj = grads[j]
+                dot = torch.dot(pc[i], gj)
+                if dot < 0:
+                    pc[i] = pc[i] - (dot / (torch.dot(gj, gj) + 1e-12)) * gj
+        return torch.stack(pc).sum(0), float(np.mean(coss))
+
+    def _pcgrad_step(self, mb, mb_adv, b_obs, b_actions, b_logprobs, b_ret, step_tasks, n):
+        """One minibatch update with PCGrad: per-task gradients -> de-conflict -> step."""
+        cfg = self.cfg
+        by_task: dict = {}
+        for j, i in enumerate(mb):
+            by_task.setdefault(step_tasks[i], []).append(j)   # j indexes mb / mb_adv
+        pg_acc = v_acc = ent_acc = kl_acc = 0.0
+        task_grads = []
+        for _t, js in by_task.items():
+            self.opt.zero_grad()
+            n_t = len(js)
+            for j in js:
+                i = mb[j]
+                act = b_actions[i]
+                if not isinstance(act, dict):
+                    act = torch.tensor(act, device=self.device)
+                lp, ent, v = self.policy.evaluate(b_obs[i], act)
+                logratio = lp - b_logprobs[i]
+                ratio = logratio.exp()
+                adv_i = mb_adv[j]
+                pg = torch.max(-adv_i * ratio,
+                               -adv_i * torch.clamp(ratio, 1 - cfg.clip_coef, 1 + cfg.clip_coef))
+                v_loss = 0.5 * (v - b_ret[i]) ** 2
+                loss = (pg - cfg.ent_coef * ent + cfg.vf_coef * v_loss) / n_t
+                loss.backward()
+                with torch.no_grad():
+                    pg_acc += float(pg); v_acc += float(v_loss); ent_acc += float(ent)
+                    kl_acc += float((ratio - 1) - logratio)
+            task_grads.append(self._flat_grad())
+        combined, cos = self._pcgrad_combine(task_grads)
+        self._set_flat_grad(combined)
+        nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
+        self.opt.step()
+        return dict(pg_loss=pg_acc / n, v_loss=v_acc / n, entropy=ent_acc / n,
+                    approx_kl=kl_acc / n, grad_cos=cos)
 
     # ---- main loop ----
 
@@ -308,7 +392,8 @@ class PPOTrainer:
                     f"return {rec['return']:+.4f} | faith {rec['faith']:.3f} | kept {rec['kept']:7.1f} | "
                     f"pg {stats['pg_loss']:+.4f} | v {stats['v_loss']:.4f} | "
                     f"ent {stats['entropy']:.3f} | kl {stats['approx_kl']:.4f} | "
-                    f"expl_var {stats['explained_var']:+.2f}",
+                    f"expl_var {stats['explained_var']:+.2f}"
+                    + (f" | gcos {stats['grad_cos']:+.3f}" if 'grad_cos' in stats and stats['grad_cos'] == stats['grad_cos'] else ""),
                     flush=True,
                 )
                 # per-task line (only meaningful when >1 task); ✓ marks faith >= tau

@@ -124,6 +124,11 @@ def parse_args():
                    help="train ONE task per iteration (cycling) instead of mixing tasks in each "
                         "update -> single-task-clean gradients, no overshadowing. Watch for "
                         "forgetting between a task's turns (grows with task count).")
+    p.add_argument("--pcgrad", action="store_true",
+                   help="PCGrad gradient surgery (Yu et al. 2020): compute per-task gradients and "
+                        "project out conflicting components so a dominating task (GreaterThan) "
+                        "can't steamroll a dominated one (IOI). Use with MIXED (not round-robin). "
+                        "Logs grad_cos (avg pairwise cosine; negative = conflict present).")
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--policy", choices=["flat", "batch"], default="flat",
@@ -248,8 +253,11 @@ def main():
         seed=args.seed,
         per_task_adv_norm=per_task_adv_norm,
         round_robin=args.round_robin,
+        pcgrad=args.pcgrad and not args.round_robin and len(bundles) > 1,
     )
-    if args.round_robin and len(bundles) > 1:
+    if args.pcgrad and not args.round_robin and len(bundles) > 1:
+        print(f"  [pcgrad] gradient surgery ON ({len(bundles)} tasks) -- de-conflicting per-task gradients", flush=True)
+    elif args.round_robin and len(bundles) > 1:
         print(f"  [round-robin] one task per iteration, cycling {len(bundles)} tasks", flush=True)
     elif per_task_adv_norm:
         print(f"  [adv-norm] per-task advantage normalization ON ({len(bundles)} tasks)", flush=True)
