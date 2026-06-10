@@ -219,11 +219,12 @@ class PPOTrainer:
                         pg_acc += float(pg); v_acc += float(v_loss); ent_acc += float(ent)
                         kl_acc += float((ratio - 1) - logratio)
 
-                nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
+                gn = nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
                 self.opt.step()
                 approx_kl = kl_acc / n
                 last = dict(pg_loss=pg_acc / n, v_loss=v_acc / n,
-                            entropy=ent_acc / n, approx_kl=approx_kl)
+                            entropy=ent_acc / n, approx_kl=approx_kl,
+                            grad_norm=float(gn))   # pre-clip norm; >max_grad_norm => clip bound
 
             if cfg.target_kl is not None and approx_kl > cfg.target_kl:
                 break
@@ -254,7 +255,12 @@ class PPOTrainer:
     def _pcgrad_combine(self, grads):
         """Project out conflicting components, return (combined_grad, avg_pairwise_cosine).
         Algorithm 1: for each task i, for each other task j (random order), if g_i·g_j < 0,
-        subtract g_i's projection onto g_j. Sum the de-conflicted gradients."""
+        subtract g_i's projection onto g_j. AVERAGE the de-conflicted gradients (equal
+        per-task weight). The paper sums, but we average so the update stays on the same
+        scale as the mean-over-samples non-PCGrad path -- otherwise the combined gradient
+        grows ~T x with #tasks, slamming the grad-norm clip every step at 12 tasks and
+        flattening the surgery into a fixed-length step. Averaging keeps LR + clip
+        calibrated and gives each task equal pull (the multi-task balance we want)."""
         n = len(grads)
         if n == 1:
             return grads[0], float("nan")
@@ -269,7 +275,7 @@ class PPOTrainer:
                 dot = torch.dot(pc[i], gj)
                 if dot < 0:
                     pc[i] = pc[i] - (dot / (torch.dot(gj, gj) + 1e-12)) * gj
-        return torch.stack(pc).sum(0), float(np.mean(coss))
+        return torch.stack(pc).mean(0), float(np.mean(coss))
 
     def _pcgrad_step(self, mb, mb_adv, b_obs, b_actions, b_logprobs, b_ret, step_tasks, n):
         """One minibatch update with PCGrad: per-task gradients -> de-conflict -> step."""
@@ -302,10 +308,10 @@ class PPOTrainer:
             task_grads.append(self._flat_grad())
         combined, cos = self._pcgrad_combine(task_grads)
         self._set_flat_grad(combined)
-        nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
+        gn = nn.utils.clip_grad_norm_(self.policy.parameters(), cfg.max_grad_norm)
         self.opt.step()
         return dict(pg_loss=pg_acc / n, v_loss=v_acc / n, entropy=ent_acc / n,
-                    approx_kl=kl_acc / n, grad_cos=cos)
+                    approx_kl=kl_acc / n, grad_cos=cos, grad_norm=float(gn))
 
     # ---- main loop ----
 
@@ -393,7 +399,8 @@ class PPOTrainer:
                     f"pg {stats['pg_loss']:+.4f} | v {stats['v_loss']:.4f} | "
                     f"ent {stats['entropy']:.3f} | kl {stats['approx_kl']:.4f} | "
                     f"expl_var {stats['explained_var']:+.2f}"
-                    + (f" | gcos {stats['grad_cos']:+.3f}" if 'grad_cos' in stats and stats['grad_cos'] == stats['grad_cos'] else ""),
+                    + (f" | gcos {stats['grad_cos']:+.3f}" if 'grad_cos' in stats and stats['grad_cos'] == stats['grad_cos'] else "")
+                    + (f" | gn {stats['grad_norm']:.2f}" if 'grad_norm' in stats else ""),
                     flush=True,
                 )
                 # per-task line (only meaningful when >1 task); ✓ marks faith >= tau
