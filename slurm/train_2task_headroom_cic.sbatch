@@ -28,7 +28,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
-#SBATCH --time=06:00:00           # stage 1 = 300 iters; resume job extends to 600
+#SBATCH --time=24:00:00           # MaxTime=UNLIMITED on main; 600 iters ~14h @ 1.4min/iter
 #SBATCH --exclude=c1,c2            # leave desk machines free; prefer c3/c4
 #SBATCH --output=mechrl_2t_hr.%A_%a.out
 #SBATCH --error=mechrl_2t_hr.%A_%a.err
@@ -52,7 +52,7 @@ python -m mechrl.train.train_agent --policy batch \
     --tasks IOITask,GreaterThanOriginal --num-examples 20 \
     --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
     --pcgrad --seed "${SLURM_ARRAY_TASK_ID}" \
-    --step-budget 150 --num-steps 512 --total-iterations 300 \
+    --step-budget 150 --num-steps 512 --total-iterations 600 \
     --device cuda --out runs
 
 echo "[$(hostname)] done $(date)  seed=${SLURM_ARRAY_TASK_ID}"
