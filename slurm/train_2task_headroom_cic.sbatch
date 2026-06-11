@@ -10,7 +10,7 @@
 # its own node. Fresh from scratch -- the obs shape changed (N_GLOBALS 5->6), so old
 # checkpoints can't warm-start this.
 #
-# DID IT WORK? Compare the per-task "└" line at convergence (~iter 250-300) vs Aquaman:
+# DID IT WORK? Compare the per-task "└" line at FULL convergence (~iter 450-600) vs Aquaman:
 #   1. LOCKSTEP BREAKS: GT settles SMALLER (~540-700) than IOI (~1000-1200), not both ~800.
 #   2. IOI FAITH RISES toward its 0.951 bar (stops AT the bar instead of cutting through).
 # If both happen across seeds -> headroom worked. If sizes stay locked -> bottleneck is
@@ -27,7 +27,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00           # 600 iters of 2-task PCGrad needs headroom (~7-8h est)
 #SBATCH --exclude=c1,c2            # leave desk machines free; prefer c3/c4
 #SBATCH --output=mechrl_2t_hr.%A_%a.out
 #SBATCH --error=mechrl_2t_hr.%A_%a.err
@@ -51,7 +51,7 @@ python -m mechrl.train.train_agent --policy batch \
     --tasks IOITask,GreaterThanOriginal --num-examples 20 \
     --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
     --pcgrad --seed "${SLURM_ARRAY_TASK_ID}" \
-    --step-budget 150 --num-steps 512 --total-iterations 300 \
+    --step-budget 150 --num-steps 512 --total-iterations 600 \
     --device cuda --out runs
 
 echo "[$(hostname)] done $(date)  seed=${SLURM_ARRAY_TASK_ID}"
