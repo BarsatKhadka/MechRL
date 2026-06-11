@@ -75,7 +75,8 @@ NODE_FEATURE_NAMES = [
 ]
 EDGE_FEATURE_DIM = len(EDGE_FEATURE_NAMES)   # 16
 NODE_FEATURE_DIM = len(NODE_FEATURE_NAMES)   # 7
-N_GLOBALS = 5                                # see CircuitEnv._observation
+N_GLOBALS = 6                                # see CircuitEnv._observation
+                                             # (6th = headroom = current_faith - tau)
 
 
 def build_features(engine, cand_edge_idx: torch.Tensor):
@@ -464,8 +465,10 @@ class CircuitEnv:
                               (also the validity mask for CUT actions)
             kill_alive_frac : float[M]  fraction of each node's edges still alive
                               (>0 means the KILL action is still valid)
-            globals         : float[5]  [step_fraction, current_faith,
-                              alive_fraction, faith_delta_last_step, faith_start]
+            globals         : float[6]  [step_fraction, current_faith,
+                              alive_fraction, faith_delta_last_step, faith_start,
+                              headroom = current_faith - tau (signed distance to this
+                              task's bar; >0 safe to cut, ~0 stop, <0 over-cut)]
         """
         alive_f = self.alive.float()
         # Fraction of each parent group's edges still alive (0.0 => KILL invalid).
@@ -473,13 +476,16 @@ class CircuitEnv:
             [float(self.alive[g].float().mean()) for g in self.bundle.parent_groups],
             dtype=torch.float32,
         )
+        cf = float(self.reward.current_faith)
         globals_ = torch.tensor(
             [
                 self.steps / max(1, self.step_budget),
-                float(self.reward.current_faith),
+                cf,
                 alive_f.mean().item(),
                 self._last_faith_delta,
                 self.faith_start,
+                cf - self.reward.tau,   # headroom: signed distance to THIS task's bar.
+                                        # >0 safe to cut, ~0 stop, <0 over-cut/back off.
             ],
             dtype=torch.float32,
         )
