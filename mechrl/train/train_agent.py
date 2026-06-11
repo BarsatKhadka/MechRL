@@ -40,6 +40,7 @@ from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.env.shared_model import build_shared_gpt2, use_shared_gpt2
 from mechrl.agent import CircuitPolicy
 from mechrl.agent.batch_policy import BatchCutPolicy
+from mechrl.agent.transformer_policy import TransformerCutPolicy
 from mechrl.train import PPOConfig, PPOTrainer
 
 
@@ -131,7 +132,7 @@ def parse_args():
                         "Logs grad_cos (avg pairwise cosine; negative = conflict present).")
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--hidden", type=int, default=128)
-    p.add_argument("--policy", choices=["flat", "batch"], default="flat",
+    p.add_argument("--policy", choices=["flat", "batch", "transformer"], default="flat",
                    help="flat = legacy single-cut/kill/stop; batch = autoregressive batch-cut")
     p.add_argument("--batch-sizes", type=int, nargs="+", default=[1, 3, 10, 30, 100],
                    help="batch-cut size options (only used with --policy batch)")
@@ -233,6 +234,9 @@ def main():
     if args.policy == "batch":
         policy = BatchCutPolicy(hidden=args.hidden, batch_sizes=tuple(args.batch_sizes))
         print(f"[policy] BatchCutPolicy batch_sizes={args.batch_sizes}", flush=True)
+    elif args.policy == "transformer":
+        policy = TransformerCutPolicy(hidden=args.hidden, batch_sizes=tuple(args.batch_sizes))
+        print(f"[policy] TransformerCutPolicy batch_sizes={args.batch_sizes}", flush=True)
     else:
         policy = CircuitPolicy(hidden=args.hidden)
     if load_ckpt is not None:
