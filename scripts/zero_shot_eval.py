@@ -32,7 +32,25 @@ from mechrl.tasks.greaterthan_helpers import get_yy_token_ids
 from scripts.battery_test import (
     TASKS, latest_ckpt, extract_circuit, gt_evaluate, IOI_FAMILIES,
 )
-from scripts.evaluate_circuit import evaluate_circuit as ioi_evaluate
+from scripts.evaluate_circuit import (
+    evaluate_circuit as ioi_evaluate, task_accuracy, random_mask,
+)
+
+
+def generic_evaluate(engine, mask):
+    """Held-out logit-diff tasks (GenderedPronoun he/she, SVA is/are, CopySuppression):
+    faith + argmax/logit-diff recovery (no task-specific ground-truth heads) +
+    necessity + specificity. Works for any task whose dataset carries (correct,wrong) labels."""
+    n = int(mask.sum().item())
+    kl = engine.run_with_mask(mask)
+    kl_cut = engine.corrupted_baseline()
+    faith = engine.faithfulness(mask)
+    acc = task_accuracy(engine, mask)                      # argmax (+ logit-diff if labels present)
+    knock = engine.all_alive_mask(); knock[mask] = False
+    knockout_faith = engine.faithfulness(knock)
+    rand_faith = engine.faithfulness(random_mask(engine.n_edges, n, seed=0))
+    return {"n_edges": n, "kl": kl, "kl_cut": kl_cut, "faith": faith, **acc,
+            "knockout_faith": knockout_faith, "random_same_size_faith": rand_faith}
 
 
 def main():
@@ -95,7 +113,7 @@ def main():
         print(f"circuit: {res['n_edges']} edges  faith {res['faith']:.4f}", flush=True)
         print(f"[heads] canonical: {res['heads_recovered']}/{res['heads_total']}", flush=True)
         print(f"[behavior] argmax {res['argmax_accuracy']:.3f}  logit-diff recovery {res.get('logit_diff_recovery', float('nan')):.3f}  correct>wrong {res.get('correct_gt_wrong_frac', float('nan')):.3f}", flush=True)
-    else:
+    elif args.task == "GreaterThanOriginal":
         years_YY = task._validation.correct_labels
         yy_ids = torch.tensor(get_yy_token_ids(task.model.tokenizer))
         res = gt_evaluate(engine, mask, years_YY, yy_ids)
@@ -103,6 +121,15 @@ def main():
         print(f"[metric: prob-diff] full {res['full_prob_diff']:+.4f}  circuit {res['circuit_prob_diff']:+.4f}  recovery {res['prob_diff_recovery']:.3f}", flush=True)
         print(f"[behavior] predicts valid year: circuit {res['circuit_valid_year_acc']:.3f}  (full {res['full_valid_year_acc']:.3f})", flush=True)
         print(f"[specificity] random same-size prob-diff {res['random_same_size_prob_diff']:+.4f}", flush=True)
+    else:
+        # held-out logit-diff task (GenderedPronoun / SVA / CopySuppression)
+        res = generic_evaluate(engine, mask)
+        print(f"circuit: {res['n_edges']} edges  faith {res['faith']:.4f}  (KL {res['kl']:.4f} / cut {res['kl_cut']:.4f})", flush=True)
+        print(f"[behavior] argmax agreement {res['argmax_accuracy']:.3f}", flush=True)
+        if "logit_diff_recovery" in res:
+            print(f"           logit-diff recovery {res['logit_diff_recovery']:.3f}  correct>wrong {res['correct_gt_wrong_frac']:.3f}", flush=True)
+        print(f"[necessity]   knockout faith {res['knockout_faith']:.4f}", flush=True)
+        print(f"[specificity] random same-size faith {res['random_same_size_faith']:.4f}", flush=True)
 
     res["task"] = args.task
     res["donor"] = run_dir.name
