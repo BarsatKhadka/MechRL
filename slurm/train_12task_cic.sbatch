@@ -24,8 +24,7 @@
 #SBATCH --partition=main
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=6
-#SBATCH --mem=24G
+#SBATCH --cpus-per-task=6        # no --mem line: CIC nodes reject explicit high mem; use default
 #SBATCH --time=0                 # unlimited (main is MaxTime=UNLIMITED). Checkpoints every
 #SBATCH --exclude=c1,c2          # 50 -> --resume-from if you ever need to extend past 1200.
 #SBATCH --output=mechrl_12task.%j.out
