@@ -91,14 +91,17 @@ def extract_circuit(policy, env, device, num_rollouts, label):
         m = env.mask.clone().cpu()
         return m, env.bundle.engine.faithfulness(m), int(m.sum().item())
 
+    # Include greedy AS A CANDIDATE: on the training tasks greedy is degenerate and a
+    # sample wins; on some HELD-OUT tasks (e.g. CopySuppression) the reverse holds --
+    # greedy is faithful while sampling is noisy. Take the best faith of {greedy} u {samples}.
     gm, gf, gk = rollout(greedy=True)
-    print(f"  [{label}] greedy: kept {gk} faith {gf:+.3f} (argmax = off-distribution)", flush=True)
-    best = None
+    print(f"  [{label}] greedy: kept {gk} faith {gf:+.3f}", flush=True)
+    best, best_src = (gm, gf, gk), "greedy"
     for k in range(num_rollouts):
         m, f, kp = rollout(greedy=False)
-        if best is None or f > best[1]:
-            best = (m, f, kp)
-    print(f"  [{label}] best-of-{num_rollouts}: kept {best[2]} faith {best[1]:.4f}", flush=True)
+        if f > best[1]:
+            best, best_src = (m, f, kp), f"sample{k}"
+    print(f"  [{label}] best: kept {best[2]} faith {best[1]:.4f}  (from {best_src})", flush=True)
     return best[0]
 
 
