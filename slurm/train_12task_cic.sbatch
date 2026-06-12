@@ -26,8 +26,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=24G
-#SBATCH --time=48:00:00          # main is MaxTime=UNLIMITED; 12-task + PCGrad is slower/iter.
-#SBATCH --exclude=c1,c2          # If it needs more than 48h, resume from the latest ckpt.
+#SBATCH --time=0                 # unlimited (main is MaxTime=UNLIMITED). Checkpoints every
+#SBATCH --exclude=c1,c2          # 50 -> --resume-from if you ever need to extend past 1200.
 #SBATCH --output=mechrl_12task.%j.out
 #SBATCH --error=mechrl_12task.%j.err
 # NOTE: main does NOT use --gres (one GPU/node, auto-allocated).
@@ -46,7 +46,7 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m mechrl.train.train_agent --pol
     --tasks train --num-examples 20 \
     --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
     --pcgrad \
-    --step-budget 150 --num-steps 512 --total-iterations 800 \
+    --step-budget 150 --num-steps 512 --total-iterations 1200 \
     --device cuda --out runs
 
 echo "[$(hostname)] 12-task done $(date)"
