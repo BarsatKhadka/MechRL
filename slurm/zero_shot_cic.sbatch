@@ -19,7 +19,10 @@
 # NOTE: main does NOT use --gres (one GPU/node, auto-allocated).
 
 set -euo pipefail
-TASK=GreaterThanOriginal          # change to a held-out task for zero-shot TRANSFER
+# HELD-OUT task (donor never trained on it) = true zero-shot TRANSFER.
+# Override per-run:  sbatch --export=ALL,TASK=CopySuppressionTask slurm/zero_shot_cic.sbatch
+# Held-out options: GenderedPronounTask, CopySuppressionTask, SubjectVerbAgreementTask
+TASK=${TASK:-GenderedPronounTask}
 echo "[$(hostname)] zero-shot start $(date)  task=${TASK}"
 nvidia-smi || true
 module load miniconda/miniconda3 2>/dev/null || true
