@@ -19,6 +19,10 @@ cd ~/MechRL
 git pull
 python -c "import torch; print('cuda?', torch.cuda.is_available())"
 
+# Aquaman's GPU is only ~8GB (vs L40S 46GB), and building 12 task prefilters is tight.
+# expandable_segments reclaims fragmented (reserved-but-unallocated) memory to fit.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m mechrl.train.train_agent --policy batch \
     --tasks train --num-examples 20 \
     --batch-sizes 1 3 10 30 --faith-margin 0.0 --threshold-penalty 5 \
