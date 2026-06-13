@@ -26,3 +26,6 @@ Thumbs.db
 wandb/
 runs/
 outputs/
+
+# local planning doc (not part of the repo)
+PAPER_PLAN.md
