@@ -36,6 +36,7 @@ from mechrl.tasks import (
     CopySuppressionTask, SuccessorHeadsTask, InductionTask,
     SubjectVerbAgreementTask, GenderedPronounTask,
     AcronymTask, SimpleSyllogismTask, OppositeSyllogismTask,
+    MCQAnchoredBiasTask, CountryCapitalTask,
 )
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.env.shared_model import build_shared_gpt2, use_shared_gpt2
@@ -62,7 +63,8 @@ TASK_SETS = {
 }
 _HELD_OUT = [CopySuppressionTask, SuccessorHeadsTask, InductionTask,
              SubjectVerbAgreementTask, GenderedPronounTask,
-             AcronymTask, SimpleSyllogismTask, OppositeSyllogismTask]
+             AcronymTask, SimpleSyllogismTask, OppositeSyllogismTask,
+             MCQAnchoredBiasTask, CountryCapitalTask]
 _BY_NAME = {c.__name__: c for c in TRAINING_TASK_CLASSES + _HELD_OUT + _DOCSTRING}
 
 

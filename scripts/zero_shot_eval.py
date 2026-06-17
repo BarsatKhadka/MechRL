@@ -48,10 +48,13 @@ HEADS_BY_TASK = {
     "SimpleSyllogismTask": {(7, 2), (9, 1), (9, 9), (10, 1), (10, 4)},
     # Saraipour & Zhang 2025 -- negative-truth heads.
     "OppositeSyllogismTask": {(7, 3), (8, 8), (8, 10), (9, 7), (10, 7)},
+    # Li & Gao 2025 -- anchored-bias heads (+ MLP9 below).
+    "MCQAnchoredBiasTask": {(8, 1), (10, 8)},
 }
 MLPS_BY_TASK = {
     # Opposite syllogism also relies on truth-logit-rescaler MLPs (layers 7-10).
     "OppositeSyllogismTask": {7, 8, 9, 10},
+    "MCQAnchoredBiasTask": {9},
 }
 
 

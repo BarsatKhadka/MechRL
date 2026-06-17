@@ -41,6 +41,8 @@ from mechrl.tasks.copy_suppression import CopySuppressionTask
 from mechrl.tasks.subject_verb import SubjectVerbAgreementTask
 from mechrl.tasks.acronyms import AcronymTask
 from mechrl.tasks.syllogism import SimpleSyllogismTask, OppositeSyllogismTask
+from mechrl.tasks.multiple_choice import MCQAnchoredBiasTask
+from mechrl.tasks.factual_recall import CountryCapitalTask
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.agent.batch_policy import BatchCutPolicy
 
@@ -60,7 +62,9 @@ TASKS = {"IOITask": IOITask, "GreaterThanOriginal": GreaterThanOriginal,
          "SubjectVerbAgreementTask": SubjectVerbAgreementTask,
          "AcronymTask": AcronymTask,
          "SimpleSyllogismTask": SimpleSyllogismTask,
-         "OppositeSyllogismTask": OppositeSyllogismTask}
+         "OppositeSyllogismTask": OppositeSyllogismTask,
+         "MCQAnchoredBiasTask": MCQAnchoredBiasTask,
+         "CountryCapitalTask": CountryCapitalTask}
 
 # Hanna, Liu, Variengien (2023) greater-than circuit -- the dominant components.
 # MLP-heavy (the >-computation lives in late MLPs); plus year-mover attention heads.

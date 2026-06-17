@@ -4,6 +4,9 @@
 #   - Acronyms          (Garcia-Carrasco et al. 2024, AISTATS)  -- 8 letter-mover heads
 #   - SimpleSyllogism   (Saraipour & Zhang 2025)                -- truth heads
 #   - OppositeSyllogism (Saraipour & Zhang 2025)                -- neg-truth heads + MLPs
+#   - MCQAnchoredBias   (Li & Gao 2025)  ON PROBATION -- positional bias; the content-swap
+#                       counterfactual may give a WEAK KL_cut (expected). The probe decides.
+#   - CountryCapital    factual recall   ON PROBATION -- likely DIFFUSE (MLP-heavy). The probe decides.
 #
 # Reads (per task): fullKL (~0 sanity), KL_cut (counterfactual strength), and top-K
 # faith at K in {3000, 8000, 16000, ALL}.
@@ -30,7 +33,7 @@ source venv/bin/activate
 python -c "import torch; print('cuda?', torch.cuda.is_available())"
 
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m scripts.probe_task_ceiling \
-    --tasks AcronymTask,SimpleSyllogismTask,OppositeSyllogismTask \
+    --tasks AcronymTask,SimpleSyllogismTask,OppositeSyllogismTask,MCQAnchoredBiasTask,CountryCapitalTask \
     --num-examples 50 --device cuda
 
 echo "[$(hostname)] ceiling probe done $(date)"
