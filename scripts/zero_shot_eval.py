@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import torch
@@ -33,8 +34,44 @@ from scripts.battery_test import (
     TASKS, latest_ckpt, extract_circuit, gt_evaluate, IOI_FAMILIES,
 )
 from scripts.evaluate_circuit import (
-    evaluate_circuit as ioi_evaluate, task_accuracy, random_mask,
+    evaluate_circuit as ioi_evaluate, task_accuracy, random_mask, parse_head,
 )
+
+
+# Canonical components from the discovery papers, for HELD-OUT head recovery (informational,
+# like greater-than: the agent finds an edge-level circuit; we report how many of the paper's
+# heads/MLPs it contains). (layer, head); MLPs by layer index.
+HEADS_BY_TASK = {
+    # Garcia-Carrasco et al. 2024 (AISTATS) -- letter-movers + previous-token + propagation.
+    "AcronymTask": {(8, 11), (10, 10), (9, 9), (11, 4), (4, 11), (1, 0), (2, 2), (5, 8)},
+    # Saraipour & Zhang 2025 -- truth heads (Fig 2b).
+    "SimpleSyllogismTask": {(7, 2), (9, 1), (9, 9), (10, 1), (10, 4)},
+    # Saraipour & Zhang 2025 -- negative-truth heads.
+    "OppositeSyllogismTask": {(7, 3), (8, 8), (8, 10), (9, 7), (10, 7)},
+}
+MLPS_BY_TASK = {
+    # Opposite syllogism also relies on truth-logit-rescaler MLPs (layers 7-10).
+    "OppositeSyllogismTask": {7, 8, 9, 10},
+}
+
+
+def head_recovery(engine, mask, heads_canon, mlps_canon=None):
+    """Scan the circuit's edges for the paper's canonical heads/MLPs (informational)."""
+    heads, mlps = set(), set()
+    for i in mask.nonzero(as_tuple=True)[0].tolist():
+        e = engine.edge_list[i]
+        for nm in (e.parent.name, e.child.name):
+            ph = parse_head(nm)
+            if ph is not None:
+                heads.add(ph)
+            mm = re.fullmatch(r"m(?:lp)?(\d+)", nm)
+            if mm is not None:
+                mlps.add(int(mm.group(1)))
+    rec = {"heads_recovered": sorted(heads_canon & heads), "heads_total": len(heads_canon)}
+    if mlps_canon:
+        rec["mlps_recovered"] = sorted(mlps_canon & mlps)
+        rec["mlps_total"] = len(mlps_canon)
+    return rec
 
 
 def generic_evaluate(engine, mask):
@@ -130,6 +167,13 @@ def main():
             print(f"           logit-diff recovery {res['logit_diff_recovery']:.3f}  correct>wrong {res['correct_gt_wrong_frac']:.3f}", flush=True)
         print(f"[necessity]   knockout faith {res['knockout_faith']:.4f}", flush=True)
         print(f"[specificity] random same-size faith {res['random_same_size_faith']:.4f}", flush=True)
+        if args.task in HEADS_BY_TASK:
+            rec = head_recovery(engine, mask, HEADS_BY_TASK[args.task], MLPS_BY_TASK.get(args.task))
+            res.update(rec)
+            line = f"[components]  canonical heads {len(rec['heads_recovered'])}/{rec['heads_total']} {rec['heads_recovered']}"
+            if "mlps_recovered" in rec:
+                line += f"  MLPs {len(rec['mlps_recovered'])}/{rec['mlps_total']} {rec['mlps_recovered']}"
+            print(line + "  (informational)", flush=True)
 
     res["task"] = args.task
     res["donor"] = run_dir.name

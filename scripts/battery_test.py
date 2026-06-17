@@ -39,6 +39,8 @@ from mechrl.tasks.greaterthan_helpers import get_yy_token_ids
 from mechrl.tasks.gendered_pronoun import GenderedPronounTask
 from mechrl.tasks.copy_suppression import CopySuppressionTask
 from mechrl.tasks.subject_verb import SubjectVerbAgreementTask
+from mechrl.tasks.acronyms import AcronymTask
+from mechrl.tasks.syllogism import SimpleSyllogismTask, OppositeSyllogismTask
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.agent.batch_policy import BatchCutPolicy
 
@@ -55,7 +57,10 @@ TASKS = {"IOITask": IOITask, "GreaterThanOriginal": GreaterThanOriginal,
          # held-out tasks (for zero_shot_eval / transfer; not in 2-task training)
          "GenderedPronounTask": GenderedPronounTask,
          "CopySuppressionTask": CopySuppressionTask,
-         "SubjectVerbAgreementTask": SubjectVerbAgreementTask}
+         "SubjectVerbAgreementTask": SubjectVerbAgreementTask,
+         "AcronymTask": AcronymTask,
+         "SimpleSyllogismTask": SimpleSyllogismTask,
+         "OppositeSyllogismTask": OppositeSyllogismTask}
 
 # Hanna, Liu, Variengien (2023) greater-than circuit -- the dominant components.
 # MLP-heavy (the >-computation lives in late MLPs); plus year-mover attention heads.

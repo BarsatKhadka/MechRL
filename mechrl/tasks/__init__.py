@@ -12,6 +12,8 @@ from mechrl.tasks.copy_suppression import CopySuppressionTask
 from mechrl.tasks.successor_heads import SuccessorHeadsTask
 from mechrl.tasks.subject_verb import SubjectVerbAgreementTask
 from mechrl.tasks.gendered_pronoun import GenderedPronounTask
+from mechrl.tasks.acronyms import AcronymTask
+from mechrl.tasks.syllogism import SimpleSyllogismTask, OppositeSyllogismTask
 
 # Cross-model / synthetic (optional — needs tracr + jax, only used for tracr
 # tasks which are NOT part of the GPT-2 training/eval pool. Import is guarded so
@@ -82,6 +84,9 @@ __all__ = [
     "SuccessorHeadsTask",
     "SubjectVerbAgreementTask",
     "GenderedPronounTask",
+    "AcronymTask",
+    "SimpleSyllogismTask",
+    "OppositeSyllogismTask",
     "TracrReverseTask",
     "TracrProportionTask",
     # Variant base classes + named subclasses
