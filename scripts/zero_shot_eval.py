@@ -100,6 +100,11 @@ def main():
     p.add_argument("--ckpt", default=None, help="checkpoint (default latest; e.g. policy_iter600.pt)")
     p.add_argument("--device", default="cuda")
     p.add_argument("--num-rollouts", type=int, default=16, help="best-of-K frozen rollouts")
+    p.add_argument("--prefilter-metric", choices=["task", "kl"], default=None,
+                   help="prefilter for the candidate set. None=logit-diff (donor default); "
+                        "'kl' = KL attribution, matches the KL faithfulness objective and is "
+                        "REQUIRED for tasks logit-diff misses (e.g. MCQAnchoredBiasTask, whose "
+                        "circuit is invisible under logit-diff but reaches ~0.95 faith under kl).")
     p.add_argument("--out", default=None)
     args = p.parse_args()
 
@@ -124,8 +129,11 @@ def main():
     if cfg.get("num_examples") is not None:
         tkwargs["num_examples"] = cfg["num_examples"]
     task = TASKS[args.task](**tkwargs)
-    bundle = TaskBundle.build(task, k=cfg.get("k", 3000))
+    pm = "kl" if args.prefilter_metric == "kl" else None
+    bundle = TaskBundle.build(task, k=cfg.get("k", 3000), prefilter_metric=pm)
     engine = bundle.engine
+    if pm == "kl":
+        print(f"[zero-shot] prefilter = KL attribution (overriding donor default)", flush=True)
 
     env = CircuitEnv(
         [bundle],
