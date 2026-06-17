@@ -1,18 +1,21 @@
 """Multiple-choice "anchored bias" on GPT-2 small (Li & Gao, ACL 2025 Findings,
-arXiv:2405.03205) -- HELD-OUT candidate, ON PROBATION (run the ceiling probe).
+arXiv:2405.03205) -- HELD-OUT candidate. Re-gate with the probe before trusting.
 
-GPT-2 small has a positional bias toward the first option "A" in MCQ prompts,
-regardless of content. The circuit is localised: heads L8.H1, L10.H8 + MLP layer 9.
+GPT-2 small has a positional bias toward the FIRST option's label in MCQ prompts.
+The circuit is localised: heads L8.H1, L10.H8 + MLP layer 9.
+
+The behaviour is POSITIONAL (the model copies the first label regardless of content),
+so a content-swap gives NO counterfactual (the old version: KL_cut 0.018, dead). We
+instead flip the LABEL SCHEME, which the first-label-copier actually responds to:
 
     clean:     "Question: Which is the answer? Answer Choices: (A) {a} (B) {b} Answer: ("  -> "A"
-    corrupted: same prompt with the option CONTENTS swapped: "(A) {b} (B) {a}"
-    metric: -(logit["A"] - logit["B"]) at the final position.
+    corrupted: "Question: Which is the answer? Answer Choices: (1) {a} (2) {b} Answer: ("  -> "1"
+    metric: -(logit["A"] - logit["B"]) at the final position (the A-over-B preference).
 
-HONEST CAVEAT: the behaviour is POSITIONAL, not content-driven, so swapping the
-option contents may NOT flip the model's output (it still says "A"). If so, KL_cut
-is small (weak counterfactual) and the task fails the ceiling gate -- that is the
-expected outcome and the probe will SHOW it empirically rather than us asserting it.
-If KL_cut comes back healthy, great, it joins the suite. RUN THE PROBE before trusting.
+Swapping A/B -> 1/2 changes the first label the model copies (A -> 1), so the output
+flips and KL_cut should be healthy. RUN THE PROBE: KL_cut >~1.5 and faith@3000 clearing
+~0.85 = viable; if KL_cut is still tiny the positional mechanism doesn't survive a label
+relabel and the task is genuinely degenerate.
 """
 
 from __future__ import annotations
@@ -31,16 +34,17 @@ _OPTIONS = [
     "cat", "dog", "car", "book", "tree", "house", "road", "river", "table", "chair",
     "apple", "water", "music", "money", "paper", "phone", "glass", "stone", "bread", "cloud",
 ]
-_TEMPLATE = "Question: Which is the answer? Answer Choices: (A) {a} (B) {b} Answer: ("
+# clean labels (A,B) vs corrupted labels (1,2): the first label the model copies flips A->1.
+_CLEAN = "Question: Which is the answer? Answer Choices: (A) {a} (B) {b} Answer: ("
+_CORR = "Question: Which is the answer? Answer Choices: (1) {a} (2) {b} Answer: ("
 
 
 def _single_tok(tok, s: str, lead: str = " ") -> bool:
     return len(tok(lead + s, add_special_tokens=False)["input_ids"]) == 1
 
 
-def _letter_id(tok, letter: str):
-    # The answer follows "(" with no space, e.g. "...Answer: (A".
-    ids = tok(letter, add_special_tokens=False)["input_ids"]
+def _tok_id(tok, s: str):
+    ids = tok(s, add_special_tokens=False)["input_ids"]   # no leading space (follows "(")
     return ids[0] if len(ids) == 1 else None
 
 
@@ -50,19 +54,18 @@ def _build_mcq_batch(model, batch_size, seed, device):
     opts = [w for w in _OPTIONS if _single_tok(tok, w)]
     if len(opts) < 4:
         raise RuntimeError("not enough single-token MCQ options")
-    a_id, b_id = _letter_id(tok, "A"), _letter_id(tok, "B")
-    if a_id is None or b_id is None:
-        raise RuntimeError("'A'/'B' not single tokens")
+    a_id, b_id = _tok_id(tok, "A"), _tok_id(tok, "B")     # clean answer "A", distractor "B"
+    one_id = _tok_id(tok, "1")                            # corrupted first label "1" (sanity)
+    if a_id is None or b_id is None or one_id is None:
+        raise RuntimeError("'A'/'B'/'1' not single tokens")
 
     clean_ids, corrupt_ids, correct, wrong, target_len = [], [], [], [], None
     tries = 0
     while len(clean_ids) < batch_size and tries < batch_size * 200:
         tries += 1
         a, b = rng.sample(opts, 2)
-        clean_s = _TEMPLATE.format(a=a, b=b)
-        corr_s = _TEMPLATE.format(a=b, b=a)          # swap option CONTENTS, keep positions
-        ci = tok(clean_s, add_special_tokens=False)["input_ids"]
-        xi = tok(corr_s, add_special_tokens=False)["input_ids"]
+        ci = tok(_CLEAN.format(a=a, b=b), add_special_tokens=False)["input_ids"]
+        xi = tok(_CORR.format(a=a, b=b), add_special_tokens=False)["input_ids"]
         if len(ci) != len(xi):
             continue
         if target_len is None:
@@ -70,7 +73,7 @@ def _build_mcq_batch(model, batch_size, seed, device):
         if len(ci) != target_len:
             continue
         clean_ids.append(ci); corrupt_ids.append(xi)
-        correct.append(a_id); wrong.append(b_id)     # "A" is the (biased) answer we measure
+        correct.append(a_id); wrong.append(b_id)
     if len(clean_ids) < batch_size:
         raise RuntimeError(f"only built {len(clean_ids)}/{batch_size} MCQ prompts; add more options")
     return (torch.tensor(clean_ids, dtype=torch.long, device=device),
@@ -90,7 +93,7 @@ def _metric(correct: torch.Tensor, wrong: torch.Tensor) -> Callable:
 
 
 class MCQAnchoredBiasTask(Task):
-    """Positional 'A' bias in multiple-choice (heads L8.H1, L10.H8 + MLP9). On probation."""
+    """First-label positional bias in multiple-choice (heads L8.H1, L10.H8 + MLP9)."""
 
     name = "mcq_anchored_bias"
 
