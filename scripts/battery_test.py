@@ -43,6 +43,13 @@ from mechrl.tasks.acronyms import AcronymTask
 from mechrl.tasks.syllogism import SimpleSyllogismTask, OppositeSyllogismTask
 from mechrl.tasks.multiple_choice import MCQAnchoredBiasTask
 from mechrl.tasks.factual_recall import CountryCapitalTask
+# Training-set variants (for the §5.2 amortisation eval: replay the donor on all 12).
+from mechrl.tasks import (
+    IOIAfterOpener, IOINoPlaceObject, IOIFriendsFound,
+    GreaterThanReversed, GreaterThanBeganEnded, GreaterThanTookPlace,
+    DocstringGPT2Task, DocstringGPT2ClassSphinxTask,
+    DocstringSphinxDescTask, DocstringFuncSphinxTask,
+)
 from mechrl.env import CircuitEnv, TaskBundle
 from mechrl.agent.batch_policy import BatchCutPolicy
 
@@ -64,7 +71,17 @@ TASKS = {"IOITask": IOITask, "GreaterThanOriginal": GreaterThanOriginal,
          "SimpleSyllogismTask": SimpleSyllogismTask,
          "OppositeSyllogismTask": OppositeSyllogismTask,
          "MCQAnchoredBiasTask": MCQAnchoredBiasTask,
-         "CountryCapitalTask": CountryCapitalTask}
+         "CountryCapitalTask": CountryCapitalTask,
+         # training-set variants (frozen-replay amortisation eval)
+         "IOIAfterOpener": IOIAfterOpener, "IOINoPlaceObject": IOINoPlaceObject,
+         "IOIFriendsFound": IOIFriendsFound,
+         "GreaterThanReversed": GreaterThanReversed,
+         "GreaterThanBeganEnded": GreaterThanBeganEnded,
+         "GreaterThanTookPlace": GreaterThanTookPlace,
+         "DocstringGPT2Task": DocstringGPT2Task,
+         "DocstringGPT2ClassSphinxTask": DocstringGPT2ClassSphinxTask,
+         "DocstringSphinxDescTask": DocstringSphinxDescTask,
+         "DocstringFuncSphinxTask": DocstringFuncSphinxTask}
 
 # Hanna, Liu, Variengien (2023) greater-than circuit -- the dominant components.
 # MLP-heavy (the >-computation lives in late MLPs); plus year-mover attention heads.
