@@ -14,14 +14,18 @@ push for it. L10.H7 partially suppresses " {food}" because it appeared recently.
 Clean prompt:     "{food}" appears earlier (suppression active)
 Corrupted prompt: a different food appears earlier (suppression target differs)
 
-Metric: logit of "{food}" at the final position. Negated so lower = better
-(matches ACDC convention — when the agent's circuit preserves L10.H7's
-suppression, the logit of {food} stays low compared to a circuit that
-removed L10.H7).
+Metric (CONTRASTIVE, like the other held-out tasks): -(logit[seen_food] -
+logit[unseen_food]) at the final position. In the clean prompt the SEEN food is
+suppressed by L10.H7 (low logit) while the UNSEEN food is not (higher logit), so
+the contrast flips sign between clean and corrupted -- a clean minimal pair, the
+same shape as GenderedPronoun (he/she), SVA (is/are), etc. (Earlier versions
+measured a single absolute logit with a garbage distractor token; that gave the
+prefilter and the agent's edge features no clean contrast to lock onto -- the one
+task built against our own contrastive method, and the one the agent failed to
+transfer to. This is the fix.)
 
 WARNING: copy suppression is a SMALLER signal than IOI / docstring / induction.
-L10.H7's typical contribution is ~0.5-1.0 logits, not 3+. Expect smaller clean
-vs corrupted gaps.
+L10.H7's typical contribution is ~0.5-1.0 logits, not 3+.
 
 Not used in training — held out as the transfer evaluation.
 """
@@ -84,7 +88,7 @@ def _build_cs_batch(
     tokenizer = model.tokenizer
     rng = random.Random(seed)
 
-    clean_strs, corrupt_strs, food_ids = [], [], []
+    clean_strs, corrupt_strs, seen_ids, unseen_ids = [], [], [], []
     for _ in range(batch_size):
         name1, name2 = rng.sample(names, 2)
         # Two different foods so corrupted prompt is structurally identical
@@ -94,14 +98,14 @@ def _build_cs_batch(
         # Clean: the food we measure ("food_clean") appears earlier in the prompt
         clean_strs.append(_build_cs_prompt(name1, name2, food_clean))
 
-        # Corrupted: the prompt mentions a DIFFERENT food earlier. The metric
-        # still measures logit of "food_clean" — which is NOT in early context
-        # in this version, so L10.H7 has nothing to suppress.
+        # Corrupted: the prompt mentions a DIFFERENT food earlier. food_clean is
+        # NOT in early context here, so L10.H7 has nothing to suppress.
         corrupt_strs.append(_build_cs_prompt(name1, name2, food_other))
 
-        # Token id of food_clean (with leading space) — what we measure
-        food_id = tokenizer(" " + food_clean, add_special_tokens=False)["input_ids"][0]
-        food_ids.append(food_id)
+        # Contrastive labels: food_clean is SEEN (suppressed in clean), food_other
+        # is UNSEEN in clean (not suppressed) -> the contrast isolates suppression.
+        seen_ids.append(tokenizer(" " + food_clean, add_special_tokens=False)["input_ids"][0])
+        unseen_ids.append(tokenizer(" " + food_other, add_special_tokens=False)["input_ids"][0])
 
     # Tokenize prompts. Length varies with names/foods chosen. We LEFT-pad
     # with EOS so the meaningful prediction position is always the LAST token.
@@ -119,25 +123,27 @@ def _build_cs_batch(
 
     clean_tokens = torch.tensor(clean_lists, dtype=torch.long, device=device)
     corrupt_tokens = torch.tensor(corrupt_lists, dtype=torch.long, device=device)
-    food_ids_t = torch.tensor(food_ids, dtype=torch.long, device=device)
-    return clean_tokens, corrupt_tokens, food_ids_t
+    seen_t = torch.tensor(seen_ids, dtype=torch.long, device=device)
+    unseen_t = torch.tensor(unseen_ids, dtype=torch.long, device=device)
+    return clean_tokens, corrupt_tokens, seen_t, unseen_t
 
 
-def _build_cs_metric(food_ids: torch.Tensor) -> Callable:
-    """Metric: mean logit of the food token at the final position.
+def _build_cs_metric(seen_ids: torch.Tensor, unseen_ids: torch.Tensor) -> Callable:
+    """CONTRASTIVE metric: -(logit[seen] - logit[unseen]) at the final position.
 
-    LOWER = better (matches ACDC convention).
-    - Clean: food appears earlier → L10.H7 suppresses → low logit → good
-    - Corrupted: food NOT in early context → no suppression → high logit
+    - Clean: seen food was mentioned earlier -> L10.H7 SUPPRESSES it -> logit[seen]
+      is low while logit[unseen] is normal -> (seen - unseen) negative -> metric high.
+    - Corrupted: roles swap -> the contrast flips sign. A clean minimal pair, same
+      shape as the other held-out tasks, so the prefilter + edge features get a sharp
+      contrastive signal instead of one bare logit.
     """
 
     def metric(logits: torch.Tensor) -> torch.Tensor:
-        last_logits = logits[:, -1, :]
-        n = last_logits.shape[0]
-        ids = food_ids[:n].to(last_logits.device)
-        idx = torch.arange(n, device=last_logits.device)
-        food_logit = last_logits[idx, ids]
-        return food_logit.mean()
+        last = logits[:, -1, :]
+        n = last.shape[0]
+        s, u = seen_ids[:n].to(last.device), unseen_ids[:n].to(last.device)
+        idx = torch.arange(n, device=last.device)
+        return -(last[idx, s] - last[idx, u]).mean()
 
     return metric
 
@@ -159,39 +165,28 @@ class CopySuppressionTask(Task):
         if len(foods) < 5 or len(names) < 5:
             raise RuntimeError(f"Need more single-token names/foods (have {len(names)}/{len(foods)}).")
 
-        clean_v, corrupt_v, food_v = _build_cs_batch(
+        clean_v, corrupt_v, seen_v, unseen_v = _build_cs_batch(
             model, self.num_examples, names, foods, seed=self.seed, device=self.device
         )
-        clean_t, corrupt_t, food_t = _build_cs_batch(
+        clean_t, corrupt_t, seen_t, unseen_t = _build_cs_batch(
             model, self.num_examples, names, foods, seed=self.seed + 1, device=self.device
         )
 
+        meta = {
+            "source": "McDougall et al. 2023 (synthetic templated version)",
+            "canonical_head": "L10.H7",
+            "task": "suppression of recently-mentioned token (contrastive)",
+            "n_names": len(names),
+            "n_foods": len(foods),
+        }
         self._model = model
         self._validation = TaskBatch(
-            clean_tokens=clean_v,
-            corrupted_tokens=corrupt_v,
-            correct_labels=food_v,
-            wrong_labels=None,
-            metric=_build_cs_metric(food_v),
-            metadata={
-                "source": "McDougall et al. 2023 (synthetic templated version)",
-                "canonical_head": "L10.H7",
-                "task": "measure suppression of recently-mentioned token",
-                "n_names": len(names),
-                "n_foods": len(foods),
-            },
+            clean_tokens=clean_v, corrupted_tokens=corrupt_v,
+            correct_labels=seen_v, wrong_labels=unseen_v,
+            metric=_build_cs_metric(seen_v, unseen_v), metadata=meta,
         )
         self._test = TaskBatch(
-            clean_tokens=clean_t,
-            corrupted_tokens=corrupt_t,
-            correct_labels=food_t,
-            wrong_labels=None,
-            metric=_build_cs_metric(food_t),
-            metadata={
-                "source": "McDougall et al. 2023 (synthetic templated version)",
-                "canonical_head": "L10.H7",
-                "task": "measure suppression of recently-mentioned token",
-                "n_names": len(names),
-                "n_foods": len(foods),
-            },
+            clean_tokens=clean_t, corrupted_tokens=corrupt_t,
+            correct_labels=seen_t, wrong_labels=unseen_t,
+            metric=_build_cs_metric(seen_t, unseen_t), metadata=meta,
         )

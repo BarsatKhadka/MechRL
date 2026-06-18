@@ -46,11 +46,22 @@ from pathlib import Path
 
 import torch
 
-from mechrl.tasks import IOITask
+from mechrl.tasks import (
+    IOITask, CopySuppressionTask, GenderedPronounTask, SubjectVerbAgreementTask,
+    AcronymTask, SimpleSyllogismTask, OppositeSyllogismTask,
+    MCQAnchoredBiasTask, CountryCapitalTask,
+)
 from mechrl.env import build_graph, AblationEngine
 
 
-TASKS = {"IOITask": IOITask}
+# A principled non-RL search on the SAME harness -> isolates "is the circuit findable?"
+# from "can our agent find it?". Add held-out tasks so we can prove findability there.
+TASKS = {"IOITask": IOITask, "CopySuppressionTask": CopySuppressionTask,
+         "GenderedPronounTask": GenderedPronounTask,
+         "SubjectVerbAgreementTask": SubjectVerbAgreementTask,
+         "AcronymTask": AcronymTask, "SimpleSyllogismTask": SimpleSyllogismTask,
+         "OppositeSyllogismTask": OppositeSyllogismTask,
+         "MCQAnchoredBiasTask": MCQAnchoredBiasTask, "CountryCapitalTask": CountryCapitalTask}
 
 
 def parse_dst(d: str):
