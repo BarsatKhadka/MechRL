@@ -47,7 +47,8 @@ from pathlib import Path
 import torch
 
 from mechrl.tasks import (
-    IOITask, CopySuppressionTask, GenderedPronounTask, SubjectVerbAgreementTask,
+    IOITask, GreaterThanOriginal, DocstringGPT2Task,
+    CopySuppressionTask, GenderedPronounTask, SubjectVerbAgreementTask,
     AcronymTask, SimpleSyllogismTask, OppositeSyllogismTask,
     MCQAnchoredBiasTask, CountryCapitalTask,
 )
@@ -55,8 +56,11 @@ from mechrl.env import build_graph, AblationEngine
 
 
 # A principled non-RL search on the SAME harness -> isolates "is the circuit findable?"
-# from "can our agent find it?". Add held-out tasks so we can prove findability there.
-TASKS = {"IOITask": IOITask, "CopySuppressionTask": CopySuppressionTask,
+# from "can our agent find it?", and gives the ACDC cost/size/faith baseline for the
+# comparison sections. Training reps (1 per family) + all held-out.
+TASKS = {"IOITask": IOITask, "GreaterThanOriginal": GreaterThanOriginal,
+         "DocstringGPT2Task": DocstringGPT2Task,
+         "CopySuppressionTask": CopySuppressionTask,
          "GenderedPronounTask": GenderedPronounTask,
          "SubjectVerbAgreementTask": SubjectVerbAgreementTask,
          "AcronymTask": AcronymTask, "SimpleSyllogismTask": SimpleSyllogismTask,
