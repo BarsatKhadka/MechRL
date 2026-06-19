@@ -46,17 +46,21 @@ def _heads(d):
 def eval_table(files, title):
     rows = []
     for f in sorted(files):
-        d = _load(f)
-        if d is None:
-            continue
-        rows.append((
-            d.get("task", Path(f).stem), _g(d, "faith"), _g(d, "n_edges"),
-            _g(d, "argmax_accuracy"), _g(d, "logit_diff_recovery"),
-            _g(d, "knockout_faith"), _g(d, "random_same_size_faith"), _heads(d),
-        ))
+        try:
+            d = _load(f)
+            if d is None:
+                continue
+            rows.append((
+                str(d.get("task", Path(f).stem)), _g(d, "faith"), _g(d, "n_edges"),
+                _g(d, "argmax_accuracy"), _g(d, "logit_diff_recovery"),
+                _g(d, "knockout_faith"), _g(d, "random_same_size_faith"), _heads(d),
+            ))
+        except Exception as e:
+            print(f"[row-skip] {f}: {type(e).__name__}: {e}")
+    print(f"\n### {title}  ({len(rows)} rows)\n")
     if not rows:
+        print("(no rows)")
         return
-    print(f"\n### {title}\n")
     print("| task | faith | edges | argmax | logitdiff-rec | necessity | specificity | heads |")
     print("|---|---|---|---|---|---|---|---|")
     for r in rows:
@@ -66,16 +70,20 @@ def eval_table(files, title):
 def acdc_table(files):
     rows = []
     for f in sorted(files):
-        d = _load(f)
-        if d is None:
-            continue
-        task = d.get("task", Path(f).stem)
-        for r in d.get("results", []):
-            rows.append((task, _g(r, "tau"), _g(r, "final_edges"),
-                         _g(r, "final_faith"), _g(r, "forward_passes")))
+        try:
+            d = _load(f)
+            if d is None:
+                continue
+            task = str(d.get("task", Path(f).stem))
+            for r in d.get("results", []):
+                rows.append((task, _g(r, "tau"), _g(r, "final_edges"),
+                             _g(r, "final_faith"), _g(r, "forward_passes")))
+        except Exception as e:
+            print(f"[acdc-skip] {f}: {type(e).__name__}: {e}")
+    print(f"\n### ACDC baseline (size / faith / cost)  ({len(rows)} rows)\n")
     if not rows:
+        print("(no rows)")
         return
-    print("\n### ACDC baseline (size / faith / cost)\n")
     print("| task | tau | edges | faith | forward-passes |")
     print("|---|---|---|---|---|")
     for r in rows:
