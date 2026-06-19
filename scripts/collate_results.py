@@ -33,12 +33,15 @@ def _g(d, k, default="-"):
     return str(v)
 
 
+def _n(v):
+    return len(v) if isinstance(v, (list, tuple)) else v
+
+
 def _heads(d):
     if "heads_total" in d:
-        rec = len(d.get("heads_recovered", []))
-        s = f"{rec}/{d['heads_total']}"
+        s = f"{_n(d.get('heads_recovered', []))}/{d['heads_total']}"
         if "mlps_total" in d:
-            s += f" +MLP {len(d.get('mlps_recovered', []))}/{d['mlps_total']}"
+            s += f" +MLP {_n(d.get('mlps_recovered', []))}/{d['mlps_total']}"
         return s
     return "-"
 
