@@ -105,6 +105,10 @@ def main():
                         "'kl' = KL attribution, matches the KL faithfulness objective and is "
                         "REQUIRED for tasks logit-diff misses (e.g. MCQAnchoredBiasTask, whose "
                         "circuit is invisible under logit-diff but reaches ~0.95 faith under kl).")
+    p.add_argument("--dump-circuit", action="store_true",
+                   help="also write circuit_<task>.json with EVERY edge and head in the returned "
+                        "circuit, the canonical head/MLP set, and the intersection, so head "
+                        "recovery can be verified by hand rather than trusted.")
     p.add_argument("--out", default=None)
     args = p.parse_args()
 
@@ -193,6 +197,37 @@ def main():
     out = Path(args.out) if args.out else (run_dir / f"zeroshot_{args.task}.json")
     out.write_text(json.dumps(res, indent=2, default=float))
     print(f"\n[zero-shot] saved -> {out}", flush=True)
+
+    if args.dump_circuit:
+        edges, heads_present, mlps_present = [], set(), set()
+        for i in mask.nonzero(as_tuple=True)[0].tolist():
+            e = engine.edge_list[i]
+            edges.append(f"{e.parent.name} -> {e.child.name}" + (f" [{e.qkv}]" if e.qkv else ""))
+            for nm in (e.parent.name, e.child.name):
+                ph = parse_head(nm)
+                if ph is not None:
+                    heads_present.add(ph)
+                mm = re.fullmatch(r"m(?:lp)?(\d+)", nm)
+                if mm is not None:
+                    mlps_present.add(int(mm.group(1)))
+        canon = set(HEADS_BY_TASK.get(args.task, set()))
+        canon_mlp = set(MLPS_BY_TASK.get(args.task, set()))
+        dump = {
+            "task": args.task,
+            "faith": res.get("faith"),
+            "n_edges": int(mask.sum().item()),
+            "canonical_heads": sorted([list(h) for h in canon]),
+            "canonical_mlps": sorted(canon_mlp),
+            "heads_present": sorted([list(h) for h in heads_present]),
+            "mlps_present": sorted(mlps_present),
+            "heads_recovered": sorted([list(h) for h in (canon & heads_present)]),
+            "mlps_recovered": sorted(canon_mlp & mlps_present),
+            "edges": edges,
+        }
+        dpath = out.parent / f"circuit_{args.task}.json"
+        dpath.write_text(json.dumps(dump, indent=2))
+        print(f"[dump] circuit -> {dpath}  heads_present={len(heads_present)} "
+              f"canonical={len(canon)} recovered={len(canon & heads_present)}", flush=True)
 
 
 if __name__ == "__main__":
