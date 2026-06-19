@@ -35,7 +35,7 @@ DONOR=$(ls -dt runs/train_seed1_*/ 2>/dev/null | head -1); DONOR=${DONOR%/}
 echo "donor: ${DONOR}"
 
 # Held-out behaviours with published canonical heads (logit-diff prefilter).
-for TASK in AcronymTask SimpleSyllogismTask OppositeSyllogismTask; do
+for TASK in GenderedPronounTask AcronymTask SimpleSyllogismTask OppositeSyllogismTask; do
     echo ""
     echo "======== DUMP -> ${TASK} ========"
     python -m scripts.zero_shot_eval --run "${DONOR}" --task "${TASK}" \
