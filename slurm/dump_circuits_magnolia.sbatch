@@ -34,8 +34,10 @@ DONOR=$(ls -dt runs/train_seed1_*/ 2>/dev/null | head -1); DONOR=${DONOR%/}
 [ -z "${DONOR}" ] && { echo "ERROR: no donor"; exit 1; }
 echo "donor: ${DONOR}"
 
-# Held-out behaviours with published canonical heads (logit-diff prefilter).
-for TASK in GenderedPronounTask AcronymTask SimpleSyllogismTask OppositeSyllogismTask; do
+# All held-out behaviours on the logit-diff prefilter. circuit_<task>.json lists every head
+# present even when we have no canonical set yet (SubjectVerb, Country-capital), so the head
+# list can be compared against the papers by hand.
+for TASK in GenderedPronounTask SubjectVerbAgreementTask AcronymTask SimpleSyllogismTask OppositeSyllogismTask CountryCapitalTask; do
     echo ""
     echo "======== DUMP -> ${TASK} ========"
     python -m scripts.zero_shot_eval --run "${DONOR}" --task "${TASK}" \
