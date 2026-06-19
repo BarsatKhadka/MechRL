@@ -89,20 +89,19 @@ def main():
     args = p.parse_args()
 
     root = Path(args.runs)
-    donor = Path(args.donor) if args.donor else None
-    if donor is None:
-        cands = sorted(root.glob("train_seed1_*"), key=lambda q: q.name)
-        donor = cands[-1] if cands else root
-    print(f"[collate] runs={root}  donor={donor}")
+    # Search the whole tree (rglob) so files are found regardless of which run dir
+    # holds them -- the donor-dir-only globs missed amort/validity before.
+    zs = sorted(root.rglob("zeroshot_*.json"))
+    amort = sorted(root.rglob("amort_*.json"))
+    valid = sorted(root.rglob("validity_*.json"))
+    acdc = sorted(root.rglob("acdc_*.json"))
+    print(f"[collate] runs={root}  found: zeroshot={len(zs)} amort={len(amort)} "
+          f"validity={len(valid)} acdc={len(acdc)}")
 
-    # §5.1 zero-shot transfer (held-out) + frozen-replay sanity, from the donor dir.
-    eval_table(list(donor.glob("zeroshot_*.json")), "5.1  Zero-shot transfer (frozen donor)")
-    # §5.2 amortisation: donor replayed on its 12 training tasks.
-    eval_table(list(donor.glob("amort_*.json")), "5.2  Amortisation (12 training tasks, frozen replay)")
-    # Warm-start validity, across all warm-started run dirs.
-    eval_table(list(root.glob("*_seed1_*/validity_*.json")), "Warm-started circuit validity")
-    # ACDC baseline.
-    acdc_table(list(root.glob("acdc_*.json")))
+    eval_table(zs, "5.1  Zero-shot transfer (frozen donor)")
+    eval_table(amort, "5.2  Amortisation (12 training tasks, frozen replay)")
+    eval_table(valid, "Warm-started circuit validity")
+    acdc_table([f for f in acdc if "circuit_tau" not in f.name])  # skip per-tau circuit dumps
 
     print("\n[collate] done. (Gate tables -- ceilings, KL_cut, EAP-IG faith-vs-K -- are "
           "print-only; read them from the mechrl_*.out logs.)")
