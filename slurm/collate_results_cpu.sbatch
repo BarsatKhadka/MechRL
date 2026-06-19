@@ -21,5 +21,6 @@
 echo "[$(hostname)] collate results start $(date)"
 cd ~/MechRL
 source venv/bin/activate
-python -m scripts.collate_results --runs runs
+RUNS=${1:-runs}    # pass runs_lam4 / runs_lam6 to collate a lambda run
+python -m scripts.collate_results --runs "${RUNS}"
 echo "[$(hostname)] collate results done $(date)"
