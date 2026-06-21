@@ -55,11 +55,20 @@ HEADS_BY_TASK = {
     "OppositeSyllogismTask": {(7, 3), (8, 8), (8, 10), (9, 7), (10, 7)},
     # Li & Gao 2025 -- anchored-bias heads (+ MLP9 below).
     "MCQAnchoredBiasTask": {(8, 1), (10, 8)},
+    # arXiv:2506.22105 "Identifying a Circuit for Verb Conjugation in GPT-2" -- 12-head base
+    # circuit (no MLPs): subject-anchor + scanner + conjunction-tracker + invariant.
+    "SubjectVerbAgreementTask": {(0, 4), (0, 8), (1, 0), (1, 1), (2, 1), (2, 6),
+                                 (6, 0), (9, 4), (10, 0), (11, 4), (11, 6), (11, 7)},
+    # arXiv:2403.19521 "Interpreting Key Mechanisms of Factual Recall" -- argument-passers
+    # (9,8)(10,0), negative (10,7)(11,10), positive (11,1)(11,5)(11,6)(11,9). Informational
+    # (some are general factual-recall machinery, not country-capital specific).
+    "CountryCapitalTask": {(9, 8), (10, 0), (10, 7), (11, 10), (11, 1), (11, 5), (11, 6), (11, 9)},
 }
 MLPS_BY_TASK = {
     # Opposite syllogism also relies on truth-logit-rescaler MLPs (layers 7-10).
     "OppositeSyllogismTask": {7, 8, 9, 10},
     "MCQAnchoredBiasTask": {9},
+    "CountryCapitalTask": {9, 10, 11},
 }
 
 
