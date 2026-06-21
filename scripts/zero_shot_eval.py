@@ -43,9 +43,10 @@ from scripts.evaluate_circuit import (
 # heads/MLPs it contains). (layer, head); MLPs by layer index.
 HEADS_BY_TASK = {
     # Mathwin et al. 2023 (Apart Alignment Jam) -- named significant heads, by position group:
-    # name (0,4)(1,4)(2,6); is (4,3)(6,0); late (9,7)(10,9)(11,8). PRELIMINARY + MLP-heavy
-    # (the paper ignored MLPs and notes they matter), so recovery here is informational.
-    "GenderedPronounTask": {(0, 4), (1, 4), (2, 6), (4, 3), (6, 0), (9, 7), (10, 9), (11, 8)},
+    # name (0,4)(2,6); is (4,3)(6,0); late (9,7)(10,9)(11,8). We drop L1H4, which the paper
+    # lists in the name group but explicitly marks "No effect" (Sec 3.3) -- a non-head by its
+    # own causal account. PRELIMINARY + MLP-heavy (the paper ignored MLPs), so informational.
+    "GenderedPronounTask": {(0, 4), (2, 6), (4, 3), (6, 0), (9, 7), (10, 9), (11, 8)},
     # Garcia-Carrasco et al. 2024 (AISTATS) -- letter-movers + previous-token + propagation.
     "AcronymTask": {(8, 11), (10, 10), (9, 9), (11, 4), (4, 11), (1, 0), (2, 2), (5, 8)},
     # Saraipour & Zhang 2025 -- truth heads (Fig 2b).
