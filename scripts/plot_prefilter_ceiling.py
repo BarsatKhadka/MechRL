@@ -85,7 +85,7 @@ def main():
     # it reaches the 0.9 ceiling around K=kstar and flattens past it.
     plt.rcParams.update({"font.size": 13, "font.family": "sans-serif",
                          "axes.edgecolor": "#2b2b2b"})
-    fig2, ax = plt.subplots(figsize=(9.4, 4.8))
+    fig2, ax = plt.subplots(figsize=(8.0, 4.9))
     for name in names:
         attr = "kl-attr" if name in KL_TASKS else "logitdiff"
         cur = tasks[name].get(attr, {})
@@ -102,9 +102,9 @@ def main():
     ax.set_ylim(0, 1.04); ax.set_xlim(0, max(ks) + 250)
     ax.grid(color="#cfcfcf", lw=0.8, ls=":", zorder=0); ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
-    leg = ax.legend(title="behaviour", loc="upper left", bbox_to_anchor=(1.01, 1.0),
-                    frameon=True, edgecolor="#000000", fontsize=10.5, title_fontsize=11.5,
-                    labelspacing=0.6, borderpad=0.8)
+    leg = ax.legend(title="behaviour", loc="lower right", frameon=True, edgecolor="#000000",
+                    facecolor="white", framealpha=1.0, fontsize=9.0, title_fontsize=10.0,
+                    labelspacing=0.4, borderpad=0.7, ncol=2, columnspacing=1.1)
     leg.get_frame().set_linewidth(1.1)
     fig2.tight_layout()
     for ext in ("pdf", "png"):
