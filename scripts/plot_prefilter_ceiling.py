@@ -72,6 +72,31 @@ def main():
         fig.savefig(f"{args.out}.{ext}", dpi=150, bbox_inches="tight")
     print(f"saved {args.out}.pdf / .png")
 
+    # ---- single-panel summary: worst-case vs mean over behaviours (the K choice) ----
+    # One K serves every behaviour, so the binding constraint is the WORST behaviour at
+    # each K, not the mean. The worst case reaches the ceiling around K=kstar and flattens.
+    M = np.array([[tasks[n].get("kl-attr" if n in KL_TASKS else "logitdiff", {}).get(str(k), np.nan)
+                   for k in ks] for n in names])
+    mn, mean = np.nanmin(M, 0), np.nanmean(M, 0)
+    fig2, ax = plt.subplots(figsize=(7.6, 4.7))
+    for r in M:
+        ax.plot(ks, r, color="#9fb3c8", alpha=0.5, lw=1)
+    ax.plot(ks, mean, color="#258", lw=2.8, label="mean over behaviours")
+    ax.plot(ks, mn, color="#c44", lw=2.8, label="worst behaviour")
+    ax.axhline(0.9, color="gray", ls="--", lw=1); ax.text(max(ks) + 60, 0.9, "0.9",
+              color="gray", va="center", fontsize=8)
+    ax.axvline(args.kstar, color="#333", ls=":", lw=1.4)
+    ax.text(args.kstar, 0.04, f"chosen $K={args.kstar}$", color="#333", ha="center", fontsize=9,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.85))
+    ax.set_xlabel("$K$ (candidate edges)"); ax.set_ylabel("candidate-set faithfulness")
+    ax.set_ylim(0, 1.02); ax.set_xlim(0, max(ks) + 200)
+    ax.legend(loc="lower right", frameon=False)
+    ax.spines[["top", "right"]].set_visible(False); ax.grid(alpha=0.15)
+    fig2.tight_layout()
+    for ext in ("pdf", "png"):
+        fig2.savefig(f"{args.out}_summary.{ext}", dpi=150, bbox_inches="tight")
+    print(f"saved {args.out}_summary.pdf / .png")
+
 
 if __name__ == "__main__":
     main()
