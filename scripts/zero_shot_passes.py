@@ -53,9 +53,9 @@ def count_for_task(policy, cfg, task_name, device, num_rollouts):
     # Wrap the one-forward-pass primitive with a call counter.
     orig = engine.run_with_mask
     state = {"calls": 0}
-    def counted(mask):
+    def counted(*a, **kw):                   # run_with_mask(mask, intervention=...) -> pass all through
         state["calls"] += 1
-        return orig(mask)
+        return orig(*a, **kw)
     engine.run_with_mask = counted
 
     def rollout(greedy):
