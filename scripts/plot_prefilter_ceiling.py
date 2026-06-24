@@ -92,8 +92,8 @@ def main():
         ys = [cur.get(str(k)) for k in ks]
         ax.plot(ks, ys, "-o", color=COLORS.get(name, "#888"), lw=1.5, ms=3.5,
                 alpha=0.95, label=LABELS.get(name, name), zorder=3)
-    ax.axhline(0.9, color="#c0395b", ls="--", lw=1.1, zorder=1)
-    ax.text(max(ks) - 650, 0.862, "$f = 0.9$", color="#c0395b", va="center", ha="center",
+    ax.axhline(0.9, color="#1a1a1a", ls="--", lw=1.1, zorder=1)
+    ax.text(max(ks) - 650, 0.862, "$f = 0.9$", color="#1a1a1a", va="center", ha="center",
             fontsize=10, fontweight="medium")
     ax.axvline(args.kstar, color="#2b2b2b", ls=":", lw=1.5, zorder=2)
     ax.text(args.kstar, 0.05, f"chosen $K={args.kstar}$", color="#2b2b2b", ha="center", fontsize=10,
