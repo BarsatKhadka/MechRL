@@ -20,6 +20,8 @@ Run on a GPU (attribution = forward+backward x ig_steps, per task per metric):
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import torch
 
@@ -36,6 +38,7 @@ def main():
     p.add_argument("--ig-steps", type=int, default=5)
     p.add_argument("--device", default="cuda")
     p.add_argument("--force", action="store_true", help="ignore cached scores, recompute")
+    p.add_argument("--out", default=None, help="if set, write faith-vs-K per task/attr to this JSON")
     args = p.parse_args()
 
     device = args.device
@@ -54,6 +57,7 @@ def main():
 
     low = []     # best ceiling at the largest K still < 0.85
     failed = []  # task didn't even build/score
+    data = {"ks": ks, "tasks": {}}   # tasks[name][attr] = {K: faith}  for the figure
     with use_shared_gpt2(shared):
         for cls in classes:
             try:
@@ -69,6 +73,7 @@ def main():
                     for k in ks:
                         faith = engine.faithfulness(pref.candidate_mask(k))   # read before next compute
                         cells += f"{faith:<8.3f}"
+                        data["tasks"].setdefault(cls.__name__, {}).setdefault(label, {})[k] = float(faith)
                         if k == ks[-1]:
                             best_at_maxk = max(best_at_maxk, faith)
                     print(f"{cls.__name__:28s} {label:9s} {cells}", flush=True)
@@ -90,6 +95,11 @@ def main():
         print("\nFAILED TO BUILD/SCORE (investigate separately):")
         for name, err in failed:
             print(f"  {name:28s} {err}")
+
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(data, indent=2))
+        print(f"\n[prefilter] faith-vs-K saved -> {args.out}", flush=True)
 
 
 if __name__ == "__main__":
