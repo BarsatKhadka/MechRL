@@ -27,6 +27,14 @@ LABELS = {
     "MCQAnchoredBiasTask": "Multiple choice",
 }
 
+# Per-behaviour colours: the seven held-out match fig_transfer; three training tasks added.
+COLORS = {
+    "GenderedPronounTask": "#3b4cc0", "AcronymTask": "#ef8636", "SimpleSyllogismTask": "#8e44ad",
+    "OppositeSyllogismTask": "#d6453d", "SubjectVerbAgreementTask": "#2e9e5b",
+    "MCQAnchoredBiasTask": "#1f8a8a", "CountryCapitalTask": "#c9a227",
+    "IOITask": "#444444", "GreaterThanOriginal": "#e377c2", "DocstringGPT2Task": "#8c564b",
+}
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -72,26 +80,31 @@ def main():
         fig.savefig(f"{args.out}.{ext}", dpi=150, bbox_inches="tight")
     print(f"saved {args.out}.pdf / .png")
 
-    # ---- single-panel summary: worst-case vs mean over behaviours (the K choice) ----
-    # One K serves every behaviour, so the binding constraint is the WORST behaviour at
-    # each K, not the mean. The worst case reaches the ceiling around K=kstar and flattens.
-    M = np.array([[tasks[n].get("kl-attr" if n in KL_TASKS else "logitdiff", {}).get(str(k), np.nan)
-                   for k in ks] for n in names])
-    mn, mean = np.nanmin(M, 0), np.nanmean(M, 0)
-    fig2, ax = plt.subplots(figsize=(7.6, 4.7))
-    for r in M:
-        ax.plot(ks, r, color="#9fb3c8", alpha=0.5, lw=1)
-    ax.plot(ks, mean, color="#258", lw=2.8, label="mean over behaviours")
-    ax.plot(ks, mn, color="#c44", lw=2.8, label="worst behaviour")
-    ax.axhline(0.9, color="gray", ls="--", lw=1); ax.text(max(ks) + 60, 0.9, "0.9",
-              color="gray", va="center", fontsize=8)
-    ax.axvline(args.kstar, color="#333", ls=":", lw=1.4)
-    ax.text(args.kstar, 0.04, f"chosen $K={args.kstar}$", color="#333", ha="center", fontsize=9,
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.85))
-    ax.set_xlabel("$K$ (candidate edges)"); ax.set_ylabel("candidate-set faithfulness")
-    ax.set_ylim(0, 1.02); ax.set_xlim(0, max(ks) + 200)
-    ax.legend(loc="lower right", frameon=False)
-    ax.spines[["top", "right"]].set_visible(False); ax.grid(alpha=0.15)
+    # ---- single-panel summary, per-behaviour colours (fig_transfer style) ----
+    # One K serves every behaviour, so the binding constraint is the worst (lowest) curve:
+    # it reaches the 0.9 ceiling around K=kstar and flattens past it.
+    plt.rcParams.update({"font.size": 13, "font.family": "sans-serif",
+                         "axes.edgecolor": "#2b2b2b"})
+    fig2, ax = plt.subplots(figsize=(9.4, 4.8))
+    for name in names:
+        attr = "kl-attr" if name in KL_TASKS else "logitdiff"
+        cur = tasks[name].get(attr, {})
+        ys = [cur.get(str(k)) for k in ks]
+        ax.plot(ks, ys, "-o", color=COLORS.get(name, "#888"), lw=2.0, ms=4.5,
+                alpha=0.92, label=LABELS.get(name, name), zorder=3)
+    ax.axhline(0.9, color="#999", ls="--", lw=1, zorder=1)
+    ax.text(max(ks) + 90, 0.9, "0.9", color="#999", va="center", fontsize=9)
+    ax.axvline(args.kstar, color="#2b2b2b", ls=":", lw=1.5, zorder=2)
+    ax.text(args.kstar, 0.05, f"chosen $K={args.kstar}$", color="#2b2b2b", ha="center", fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9), zorder=5)
+    ax.set_xlabel("$K$ (candidate edges)", fontsize=13.5, labelpad=6)
+    ax.set_ylabel("candidate-set faithfulness", fontsize=13.5, labelpad=6)
+    ax.set_ylim(0, 1.04); ax.set_xlim(0, max(ks) + 250)
+    ax.grid(color="#ececec", lw=0.9, zorder=0); ax.set_axisbelow(True)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.legend(title="behaviour", loc="upper left", bbox_to_anchor=(1.01, 1.0),
+              frameon=True, edgecolor="#cccccc", fontsize=10.5, title_fontsize=11.5,
+              labelspacing=0.6, borderpad=0.7)
     fig2.tight_layout()
     for ext in ("pdf", "png"):
         fig2.savefig(f"{args.out}_summary.{ext}", dpi=150, bbox_inches="tight")
