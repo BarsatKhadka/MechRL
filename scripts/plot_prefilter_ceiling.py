@@ -66,6 +66,8 @@ def main():
         if i >= n - ncol:
             ax.set_xlabel("$K$ (candidate edges)")
     fig.tight_layout()
+    from pathlib import Path
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     for ext in ("pdf", "png"):
         fig.savefig(f"{args.out}.{ext}", dpi=150, bbox_inches="tight")
     print(f"saved {args.out}.pdf / .png")
