@@ -93,7 +93,7 @@ def main():
         ax.plot(ks, ys, "-o", color=COLORS.get(name, "#888"), lw=1.5, ms=3.5,
                 alpha=0.95, label=LABELS.get(name, name), zorder=3)
     ax.axhline(0.9, color="#999", ls="--", lw=1, zorder=1)
-    ax.text(max(ks) + 90, 0.9, "0.9", color="#999", va="center", fontsize=9)
+    ax.text(max(ks) - 650, 0.865, "$f = 0.9$", color="#777", va="center", ha="center", fontsize=9.5)
     ax.axvline(args.kstar, color="#2b2b2b", ls=":", lw=1.5, zorder=2)
     ax.text(args.kstar, 0.05, f"chosen $K={args.kstar}$", color="#2b2b2b", ha="center", fontsize=10,
             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9), zorder=5)
