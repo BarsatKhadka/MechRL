@@ -28,13 +28,17 @@ python -c "import torch; print('cuda?', torch.cuda.is_available())"
 
 # Table-4 behaviours (all logit-diff attribution). Add MCQAnchoredBiasTask with --prefilter-metric
 # kl if you want it. Sizes span the range where faith crosses ~0.9.
-for TASK in IOITask GreaterThanOriginal DocstringGPT2Task GenderedPronounTask AcronymTask SubjectVerbAgreementTask; do
+for TASK in IOITask GreaterThanOriginal DocstringGPT2Task GenderedPronounTask AcronymTask \
+            SubjectVerbAgreementTask SimpleSyllogismTask OppositeSyllogismTask \
+            CountryCapitalTask MCQAnchoredBiasTask; do
     echo ""
     echo "======== EAP-IG greedy -> ${TASK} ========"
+    EXTRA=""
+    [ "${TASK}" = "MCQAnchoredBiasTask" ] && EXTRA="--prefilter-metric kl"
     python -m scripts.run_eapig_greedy --task "${TASK}" --device cuda \
         --num-examples 20 --ig-steps 5 \
         --sizes 50 100 200 400 700 1000 1500 2000 3000 \
-        --out "runs/eapig_${TASK}.json" || echo "[FAILED] EAP-IG greedy ${TASK}"
+        --out "runs/eapig_${TASK}.json" ${EXTRA} || echo "[FAILED] EAP-IG greedy ${TASK}"
 done
 
 echo "[$(hostname)] EAP-IG greedy done $(date)"
