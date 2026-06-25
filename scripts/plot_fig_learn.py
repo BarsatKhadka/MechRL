@@ -40,8 +40,8 @@ def main():
     pb = sorted(json.load(open(args.probe))["rows"], key=lambda r: r["faith_gap_vs_topC"])
 
     plt.rcParams.update({"font.size": 10, "font.family": "sans-serif", "axes.edgecolor": "#2b2b2b"})
-    fig = plt.figure(figsize=(12.5, 7.2))
-    gs = GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1], hspace=0.34, wspace=0.16)
+    fig = plt.figure(figsize=(12.5, 7.8))
+    gs = GridSpec(2, 2, width_ratios=[1, 1.12], height_ratios=[1.35, 1], hspace=0.36, wspace=0.2)
     axK = fig.add_subplot(gs[0, 0]); axA = fig.add_subplot(gs[0, 1])
     axB = fig.add_subplot(gs[1, 0]); axL = fig.add_subplot(gs[1, 1]); axL.axis("off")
 
