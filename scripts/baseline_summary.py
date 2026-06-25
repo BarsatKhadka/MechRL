@@ -18,33 +18,39 @@ import os
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--runs-dir", default="runs")
-    p.add_argument("--tau", type=float, default=0.003, help="ACDC threshold to report")
     p.add_argument("--out", default="runs/baseline_summary.json")
     args = p.parse_args()
 
-    S = {"acdc": {}, "eapig": {}, "acdc_tau": args.tau}
+    S = {"acdc": {}, "eapig": {}, "eapig_kl": {}}
 
+    # ACDC: keep ALL thresholds per task (list), so we can pick a non-degenerate point downstream.
     for f in sorted(glob.glob(os.path.join(args.runs_dir, "acdc_*.json"))):
         n = os.path.basename(f)
-        if "circuit" in n or "smoke" in n or "copysupp" in n.lower():   # skip per-tau circuit dumps / smoke / copy-supp
+        if "circuit" in n or "smoke" in n or "copysupp" in n.lower():
             continue
         task = n[len("acdc_"):-len(".json")]
         res = json.load(open(f)).get("results", [])
-        if not res:
-            continue
-        r = min(res, key=lambda x: abs(x["tau"] - args.tau))            # closest threshold to --tau
-        S["acdc"][task] = {"edges": r["final_edges"], "faith": r["final_faith"],
-                           "passes": r["forward_passes"], "tau": r["tau"]}
+        if res:
+            S["acdc"][task] = [{"tau": r["tau"], "edges": r["final_edges"],
+                                "faith": r["final_faith"], "passes": r["forward_passes"]} for r in res]
 
+    # EAP-IG greedy curves: logit-diff (eapig_*) and KL (eapig_kl_*) attribution, kept separate.
+    for f in sorted(glob.glob(os.path.join(args.runs_dir, "eapig_kl_*.json"))):
+        task = os.path.basename(f)[len("eapig_kl_"):-len(".json")]
+        S["eapig_kl"][task] = {"curve": json.load(open(f))["curve"]}
     for f in sorted(glob.glob(os.path.join(args.runs_dir, "eapig_*.json"))):
-        task = os.path.basename(f)[len("eapig_"):-len(".json")]
-        S["eapig"][task] = {"curve": json.load(open(f))["curve"]}       # [(edges, faith), ...]
+        n = os.path.basename(f)
+        if n.startswith("eapig_kl_"):
+            continue
+        task = n[len("eapig_"):-len(".json")]
+        S["eapig"][task] = {"curve": json.load(open(f))["curve"]}
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     json.dump(S, open(args.out, "w"), indent=2)
     print(f"wrote {args.out}")
-    print("acdc tasks :", sorted(S["acdc"]))
-    print("eapig tasks:", sorted(S["eapig"]))
+    print("acdc tasks    :", sorted(S["acdc"]))
+    print("eapig tasks   :", sorted(S["eapig"]))
+    print("eapig_kl tasks:", sorted(S["eapig_kl"]))
 
 
 if __name__ == "__main__":
