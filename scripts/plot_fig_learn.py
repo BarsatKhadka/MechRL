@@ -65,19 +65,24 @@ def main():
     axK.set_title("(a)  candidate-set faithfulness vs $K$", fontsize=11.5)
 
     y = np.arange(len(pb))
-    # (b) agent vs top-|C|: dumbbell coloured per behaviour, win/loss read from direction
-    for i, r in enumerate(pb):
-        col = COLORS[r["task"]]
-        axA.plot([r["faith_topC"], r["faith_agent"]], [i, i], color=col, lw=2.0, alpha=0.45, zorder=1)
-        axA.scatter(r["faith_topC"], i, facecolors="white", edgecolors=col, s=46, lw=1.7, zorder=3)
-        axA.scatter(r["faith_agent"], i, color=col, s=58, zorder=3)
-    axA.scatter([], [], facecolors="white", edgecolors="#555", s=46, lw=1.7, label="top-$|C|$ by score")
-    axA.scatter([], [], color="#555", s=58, label="agent")
-    axA.set_yticks([]); axA.set_ylim(-0.7, len(pb) - 0.3)
-    axA.set_xlabel("$f$ at matched size $|C|$")
+    # (b) agent vs top-|C|: scatter against the diagonal; above the line = agent more faithful
+    lo = min(min(r["faith_topC"], r["faith_agent"]) for r in pb) - 0.03
+    hi = 1.01
+    dl = np.array([lo, hi])
+    axA.fill_between(dl, dl, hi, color="#2e9e5b", alpha=0.07, zorder=0)        # agent-wins region
+    axA.plot(dl, dl, ls="--", color="#888", lw=1.2, zorder=1)
+    for r in pb:
+        axA.scatter(r["faith_topC"], r["faith_agent"], color=COLORS[r["task"]], s=85,
+                    edgecolors="white", lw=0.9, zorder=3)
+    axA.text(lo + 0.015, hi - 0.015, "agent more faithful", ha="left", va="top",
+             fontsize=8.5, color="#2e7d32", style="italic")
+    axA.text(hi - 0.015, lo + 0.02, "ranking more\nfaithful", ha="right", va="bottom",
+             fontsize=8.5, color="#999", style="italic")
+    axA.set_xlim(lo, hi); axA.set_ylim(lo, hi); axA.set_aspect("equal", adjustable="box")
+    axA.set_xlabel("top-$|C|$ by score: faithfulness $f$")
+    axA.set_ylabel("agent: faithfulness $f$")
     axA.set_title("(b)  agent's selection vs top-$|C|$ by score", fontsize=11.5)
-    axA.legend(loc="lower right", frameon=False, fontsize=8.5)
-    axA.grid(axis="x", ls=":", color="#cfcfcf", lw=0.8); axA.set_axisbelow(True)
+    axA.grid(ls=":", color="#cfcfcf", lw=0.8); axA.set_axisbelow(True)
     axA.spines[["top", "right"]].set_visible(False)
 
     # (c) load-bearing: bars coloured per behaviour, same row order as (b); sign = direction
