@@ -1,0 +1,77 @@
+{
+  "donor": "train_seed1_1781368586",
+  "rows": [
+    {
+      "task": "IOITask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2528,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 146.8235294117647,
+      "max_steps_per_episode": 150,
+      "final_edges": 1123,
+      "final_faith": 0.9623179492514891
+    },
+    {
+      "task": "GreaterThanOriginal",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2529,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 146.88235294117646,
+      "max_steps_per_episode": 150,
+      "final_edges": 464,
+      "final_faith": 0.9835482842655989
+    },
+    {
+      "task": "DocstringGPT2Task",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2448,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 142.35294117647058,
+      "max_steps_per_episode": 150,
+      "final_edges": 725,
+      "final_faith": 0.8945115957672708
+    },
+    {
+      "task": "GenderedPronounTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2422,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 140.7058823529412,
+      "max_steps_per_episode": 150,
+      "final_edges": 628,
+      "final_faith": 0.9967580683671671
+    },
+    {
+      "task": "AcronymTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2427,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 141.11764705882354,
+      "max_steps_per_episode": 150,
+      "final_edges": 411,
+      "final_faith": 0.9552709740390887
+    },
+    {
+      "task": "SubjectVerbAgreementTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2539,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 147.58823529411765,
+      "max_steps_per_episode": 150,
+      "final_edges": 469,
+      "final_faith": 0.8365042452808253
+    }
+  ]
+}

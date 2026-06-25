@@ -1,0 +1,53 @@
+{
+  "donor": "train_seed1_1781368586",
+  "rows": [
+    {
+      "task": "SimpleSyllogismTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2446,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 142.05882352941177,
+      "max_steps_per_episode": 150,
+      "final_edges": 674,
+      "final_faith": 0.7339470365290587
+    },
+    {
+      "task": "OppositeSyllogismTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2494,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 144.8235294117647,
+      "max_steps_per_episode": 150,
+      "final_edges": 779,
+      "final_faith": 0.8469708145668797
+    },
+    {
+      "task": "CountryCapitalTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2364,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 137.47058823529412,
+      "max_steps_per_episode": 150,
+      "final_edges": 782,
+      "final_faith": 0.8643426245295955
+    },
+    {
+      "task": "MCQAnchoredBiasTask",
+      "k": 3000,
+      "num_rollouts": 16,
+      "rollouts_total": 17,
+      "forward_passes_total": 2551,
+      "forward_passes_one_rollout": 152,
+      "mean_steps_per_episode": 148.11764705882354,
+      "max_steps_per_episode": 150,
+      "final_edges": 609,
+      "final_faith": 0.8558814194807473
+    }
+  ]
+}
