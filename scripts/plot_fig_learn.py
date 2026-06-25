@@ -40,60 +40,65 @@ def main():
     pb = sorted(json.load(open(args.probe))["rows"], key=lambda r: r["faith_gap_vs_topC"])
 
     plt.rcParams.update({"font.size": 10, "font.family": "sans-serif", "axes.edgecolor": "#2b2b2b"})
-    fig = plt.figure(figsize=(15, 5.3))
-    gs = GridSpec(2, 2, width_ratios=[1.18, 1.0], height_ratios=[1, 1], hspace=0.42, wspace=0.18)
-    axK = fig.add_subplot(gs[:, 0]); axA = fig.add_subplot(gs[0, 1]); axB = fig.add_subplot(gs[1, 1])
+    fig = plt.figure(figsize=(12.5, 7.2))
+    gs = GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1], hspace=0.34, wspace=0.16)
+    axK = fig.add_subplot(gs[0, 0]); axA = fig.add_subplot(gs[0, 1])
+    axB = fig.add_subplot(gs[1, 0]); axL = fig.add_subplot(gs[1, 1]); axL.axis("off")
 
-    # (a) candidate-set faithfulness vs K
+    # (a) candidate-set faithfulness vs K  (colours keyed by the legend, panel d)
     for n in ORDER:
         if n not in T:
             continue
         cur = T[n].get("kl-attr" if n in KL else "logitdiff", {})
         axK.plot(ks, [cur.get(str(k)) for k in ks], "-o", color=COLORS.get(n, "#888"),
-                 lw=1.5, ms=3.5, alpha=0.95, label=LAB.get(n, n))
+                 lw=1.5, ms=3.5, alpha=0.95)
     axK.axhline(0.9, color="#1a1a1a", ls="--", lw=1.1)
     axK.text(max(ks) - 650, 0.862, "$f = 0.9$", color="#1a1a1a", ha="center", va="center",
              fontsize=9.5, fontweight="medium")
     axK.axvline(args.kstar, color="#2b2b2b", ls=":", lw=1.5)
-    axK.text(args.kstar, 0.05, f"chosen $K={args.kstar}$", color="#2b2b2b", ha="center", fontsize=9.5,
+    axK.text(args.kstar, 0.05, f"chosen $K={args.kstar}$", color="#2b2b2b", ha="center", fontsize=9,
              bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
     axK.set_xlabel("$K$ (candidate edges)"); axK.set_ylabel("candidate-set faithfulness")
     axK.set_ylim(0, 1.04); axK.set_xlim(0, max(ks) + 250)
     axK.grid(color="#cfcfcf", lw=0.8, ls=":"); axK.set_axisbelow(True)
     axK.spines[["top", "right"]].set_visible(False)
-    leg = axK.legend(title="behaviour", loc="lower right", frameon=True, edgecolor="#000000",
-                     facecolor="white", framealpha=1.0, fontsize=8, title_fontsize=9,
-                     labelspacing=0.32, borderpad=0.6, ncol=2, columnspacing=1.0)
-    leg.get_frame().set_linewidth(1.0)
     axK.set_title("(a)  candidate-set faithfulness vs $K$", fontsize=11.5)
 
-    labs = [LAB[r["task"]] for r in pb]; y = np.arange(len(pb))
-
-    # (b) agent vs top-|C| selection
+    y = np.arange(len(pb))
+    # (b) agent vs top-|C|: dumbbell coloured per behaviour, win/loss read from direction
     for i, r in enumerate(pb):
-        a, t, g = r["faith_agent"], r["faith_topC"], r["faith_gap_vs_topC"]
-        c = "#2e9e5b" if g > 0.01 else ("#c0395b" if g < -0.01 else "#888")
-        axA.plot([t, a], [i, i], color="#c8c8c8", lw=2.0, zorder=1)
-        axA.scatter(t, i, facecolors="white", edgecolors="#555", s=44, lw=1.5, zorder=3)
-        axA.scatter(a, i, color=c, s=54, zorder=3)
-    axA.scatter([], [], facecolors="white", edgecolors="#555", s=44, lw=1.5, label="top-$|C|$")
-    axA.scatter([], [], color="#2e9e5b", s=54, label="agent")
-    axA.set_yticks(y); axA.set_yticklabels(labs, fontsize=8.5)
+        col = COLORS[r["task"]]
+        axA.plot([r["faith_topC"], r["faith_agent"]], [i, i], color=col, lw=2.0, alpha=0.45, zorder=1)
+        axA.scatter(r["faith_topC"], i, facecolors="white", edgecolors=col, s=46, lw=1.7, zorder=3)
+        axA.scatter(r["faith_agent"], i, color=col, s=58, zorder=3)
+    axA.scatter([], [], facecolors="white", edgecolors="#555", s=46, lw=1.7, label="top-$|C|$ by score")
+    axA.scatter([], [], color="#555", s=58, label="agent")
+    axA.set_yticks([]); axA.set_ylim(-0.7, len(pb) - 0.3)
     axA.set_xlabel("$f$ at matched size $|C|$")
     axA.set_title("(b)  agent's selection vs top-$|C|$ by score", fontsize=11.5)
     axA.legend(loc="lower right", frameon=False, fontsize=8.5)
     axA.grid(axis="x", ls=":", color="#cfcfcf", lw=0.8); axA.set_axisbelow(True)
     axA.spines[["top", "right"]].set_visible(False)
 
-    # (c) load-bearing of discordant edges
-    drop = [r["faith_drop_from_discordant"] for r in pb]
-    cols = ["#2a6f9e" if v >= 0 else "#c0395b" for v in drop]
-    axB.barh(y, drop, color=cols, height=0.6, zorder=3); axB.axvline(0, color="#2b2b2b", lw=0.9)
-    axB.set_yticks(y); axB.set_yticklabels(labs, fontsize=8.5)
+    # (c) load-bearing: bars coloured per behaviour, same row order as (b); sign = direction
+    for i, r in enumerate(pb):
+        axB.barh(i, r["faith_drop_from_discordant"], color=COLORS[r["task"]], height=0.62, zorder=3)
+    axB.axvline(0, color="#2b2b2b", lw=0.9)
+    axB.set_yticks([]); axB.set_ylim(-0.7, len(pb) - 0.3)
     axB.set_xlabel("faith drop when discordant edges ablated")
     axB.set_title("(c)  are the rescued below-cutoff edges load-bearing?", fontsize=11.5)
     axB.grid(axis="x", ls=":", color="#cfcfcf", lw=0.8); axB.set_axisbelow(True)
     axB.spines[["top", "right"]].set_visible(False)
+
+    # shared behaviour colour key (fills the empty bottom-right)
+    from matplotlib.lines import Line2D
+    handles = [Line2D([0], [0], marker="o", color="none", markerfacecolor=COLORS[n],
+                      markeredgecolor=COLORS[n], markersize=9, label=LAB[n]) for n in ORDER]
+    lg = axL.legend(handles=handles, title="behaviour", loc="center", frameon=True,
+                    edgecolor="#000000", facecolor="white", framealpha=1.0, fontsize=10.5,
+                    title_fontsize=11.5, ncol=2, labelspacing=0.7, columnspacing=1.4,
+                    handletextpad=0.5, borderpad=1.0)
+    lg.get_frame().set_linewidth(1.0)
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     for ext in ("pdf", "png"):
