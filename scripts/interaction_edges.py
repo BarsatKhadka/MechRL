@@ -108,9 +108,37 @@ def analyze(policy, cfg, task_name, device, num_rollouts):
     }
 
 
+def find_warm_run(runs_dir, task):
+    """Newest runs/<task>_seed1_* whose config has a non-null init_from (a warm-start run)."""
+    best, best_ts = None, -1
+    for d in Path(runs_dir).glob(f"{task}_seed1_*"):
+        cfgp = d / "config.json"
+        if cfgp.exists() and json.loads(cfgp.read_text()).get("init_from"):
+            try:
+                ts = int(d.name.split("_")[-1])
+            except ValueError:
+                ts = 0
+            if ts > best_ts:
+                best, best_ts = d, ts
+    return best
+
+
+def load_policy(run_dir, ckpt_arg, device):
+    cfg = json.loads((run_dir / "config.json").read_text())
+    ckpt = Path(ckpt_arg) if ckpt_arg else latest_ckpt(run_dir)
+    policy = BatchCutPolicy(hidden=cfg.get("hidden", 128),
+                            batch_sizes=tuple(cfg.get("batch_sizes", [1, 3, 10, 30]))).to(device)
+    policy.load_state_dict(torch.load(ckpt, map_location=device))
+    policy.eval()
+    return policy, cfg, ckpt
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--run", required=True)
+    p.add_argument("--run", default=None, help="donor run dir (zero-shot); not needed with --warm")
+    p.add_argument("--warm", action="store_true",
+                   help="use each task's OWN warm-start run (newest <task>_seed1_* with init_from)")
+    p.add_argument("--runs-dir", default="runs")
     p.add_argument("--ckpt", default=None)
     p.add_argument("--device", default="cuda")
     p.add_argument("--num-rollouts", type=int, default=16)
@@ -121,34 +149,39 @@ def main():
     device = args.device
     if device == "cuda" and not torch.cuda.is_available():
         print("[warn] cuda unavailable; cpu", flush=True); device = "cpu"
+    if not args.warm and not args.run:
+        raise SystemExit("provide --run (zero-shot) or --warm (per-task warm-start)")
 
-    run_dir = Path(args.run)
-    cfg = json.loads((run_dir / "config.json").read_text())
-    ckpt = Path(args.ckpt) if args.ckpt else latest_ckpt(run_dir)
-    print(f"[probe2] donor={run_dir.name} ckpt={ckpt.name} device={device}", flush=True)
-
-    policy = BatchCutPolicy(hidden=cfg.get("hidden", 128),
-                            batch_sizes=tuple(cfg.get("batch_sizes", [1, 3, 10, 30]))).to(device)
-    policy.load_state_dict(torch.load(ckpt, map_location=device))
-    policy.eval()
+    donor = None
+    if not args.warm:
+        donor = load_policy(Path(args.run), args.ckpt, device)
+        print(f"[probe2] donor={Path(args.run).name} ckpt={donor[2].name} device={device}", flush=True)
 
     rows = []
     for t in [x.strip() for x in args.tasks.split(",") if x.strip()]:
         if t not in TASKS:
             print(f"[skip] unknown task {t}", flush=True); continue
-        print(f"\n=== {t} ===", flush=True)
+        if args.warm:
+            wdir = find_warm_run(args.runs_dir, t)
+            if wdir is None:
+                print(f"[skip] no warm-start run for {t}", flush=True); continue
+            policy, cfg, _ = load_policy(wdir, None, device)
+            print(f"\n=== {t}  (warm: {wdir.name}) ===", flush=True)
+        else:
+            policy, cfg = donor[0], donor[1]
+            print(f"\n=== {t} ===", flush=True)
         r = analyze(policy, cfg, t, device, args.num_rollouts)
         rows.append(r)
         print(f"  |C|={r['C']}  agent f={r['faith_agent']:.3f} vs top-|C| f={r['faith_topC']:.3f} "
               f"(gap {r['faith_gap_vs_topC']:+.3f})", flush=True)
-        print(f"  discordant (rank>|C|): {r['n_discordant']}/{r['C']} = {r['frac_discordant']:.0%}  "
-              f"(random would be {r['expected_discordant_random']/r['C']:.0%})  "
-              f"ablating them: f {r['faith_agent']:.3f} -> {r['faith_after_ablating_discordant']:.3f} "
-              f"(drop {r['faith_drop_from_discordant']:+.3f})", flush=True)
+        print(f"  discordant {r['n_discordant']}/{r['C']} = {r['frac_discordant']:.0%}  "
+              f"(random {r['expected_discordant_random']/r['C']:.0%})  drop "
+              f"{r['faith_drop_from_discordant']:+.3f}", flush=True)
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text(json.dumps({"donor": run_dir.name, "rows": rows}, indent=2, default=float))
-    print(f"\n[probe2] saved -> {args.out}", flush=True)
+    mode = "warm" if args.warm else "zero_shot"
+    Path(args.out).write_text(json.dumps({"mode": mode, "rows": rows}, indent=2, default=float))
+    print(f"\n[probe2] saved -> {args.out}  (mode={mode})", flush=True)
 
 
 if __name__ == "__main__":
