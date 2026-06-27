@@ -14,6 +14,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.patches import Wedge, Circle
 
 LAB = {"IOITask": "IOI", "GreaterThanOriginal": "Greater-than", "DocstringGPT2Task": "Docstring",
        "GenderedPronounTask": "Gendered pronoun", "SubjectVerbAgreementTask": "Subject-verb",
@@ -77,7 +78,7 @@ def main():
     gap = np.array([by_task[t]["faith_gap_vs_topC"] for t in present])
     ang = np.linspace(0, 2 * np.pi, len(present), endpoint=False)
     ac = np.concatenate([ang, ang[:1]]); gc = np.concatenate([gap, gap[:1]])
-    th = np.linspace(0, 2 * np.pi, 200); rmax = 0.135
+    th = np.linspace(0, 2 * np.pi, 200); rmax = 0.19
     axA.set_theta_zero_location("N"); axA.set_theta_direction(-1)
     axA.set_rorigin(-0.085); axA.set_ylim(-0.075, rmax)
     axA.fill_between(th, 0, rmax, color="#2e9e5b", alpha=0.11, zorder=0)        # more-faithful zone
@@ -89,29 +90,55 @@ def main():
         g = by_task[t]["faith_gap_vs_topC"]
         axA.scatter(a, g, color=COLORS[t], s=160, edgecolors="white", lw=1.2, zorder=5)
         lab = f"{g:+.2f}".replace("+0.00", "0.00").replace("-0.00", "0.00")
-        axA.text(a, g + 0.0125, lab, fontsize=7.3, ha="center", va="center", color="#222", zorder=6,
-                 bbox=dict(boxstyle="round,pad=0.08", fc="white", ec="none", alpha=0.7))
+        axA.text(a, max(g - 0.018, -0.05), lab, fontsize=6.8, ha="center", va="center", color="#333",
+                 zorder=8, bbox=dict(boxstyle="round,pad=0.04", fc="white", ec="none", alpha=0.8))
     # optional: warm-start gain as a hollow dot joined to the zero-shot dot by a dotted spoke
     import os
     if os.path.exists(args.probe_warm):
         warm = {r["task"]: r["faith_gap_vs_topC"] for r in json.load(open(args.probe_warm))["rows"]}
+        rcap = 0.155                                          # cap an outlier spoke so it pokes just past the pack
+        # green grows outward to the warm-start boundary (training tasks have no warm -> use their zero-shot gap)
+        warm_r = np.array([min(warm.get(t, by_task[t]["faith_gap_vs_topC"]), rcap) for t in present])
+        wc = np.concatenate([warm_r, warm_r[:1]])
+        axA.fill(ac, wc, color="#2e9e5b", alpha=0.10, zorder=1)
+        axA.plot(ac, wc, color="#3e8e5e", lw=1.3, ls=(0, (4, 2)), zorder=3)
         for a, t in zip(ang, present):
-            if t in warm:
-                axA.plot([a, a], [by_task[t]["faith_gap_vs_topC"], warm[t]], color=COLORS[t],
-                         ls=":", lw=1.5, zorder=4)
-                axA.scatter(a, warm[t], facecolors="white", edgecolors=COLORS[t], s=120, lw=1.9, zorder=6)
-        from matplotlib.lines import Line2D
-        axA.legend(handles=[Line2D([0], [0], marker="o", color="#555", linestyle="none", label="zero-shot"),
-                            Line2D([0], [0], marker="o", markerfacecolor="white", markeredgecolor="#555",
-                                   linestyle="none", label="warm-start")],
-                   loc="upper left", bbox_to_anchor=(-0.05, 1.12), frameon=False, fontsize=8.5)
+            if t not in warm:
+                continue
+            w = warm[t]; r_plot = min(w, rcap)
+            axA.plot([a, a], [by_task[t]["faith_gap_vs_topC"], r_plot], color=COLORS[t],
+                     ls=":", lw=1.5, zorder=4)
+            axA.scatter(a, r_plot, facecolors="none", edgecolors=COLORS[t], s=150, lw=2.1, zorder=7)
+            lr = (rmax - 0.012) if w > rcap else (r_plot + 0.02)    # true warm value, outside the ring
+            axA.text(a, lr, f"{w:+.2f}", fontsize=6.8, ha="center", va="center", color=COLORS[t],
+                     fontweight="bold", zorder=8,
+                     bbox=dict(boxstyle="round,pad=0.04", fc="white", ec="none", alpha=0.8))
+        # pie-wheel key matching Figure 2, roles reversed: filled = zero-shot, donut = warm-start
+        pie_colors = [COLORS[t] for t in present]
+        def draw_key(rect, donut):
+            axk = fig.add_axes(rect); axk.set_xlim(-1.2, 1.2); axk.set_ylim(-1.2, 1.2)
+            axk.set_aspect("equal"); axk.axis("off")
+            step = 360.0 / len(pie_colors)
+            for i, c in enumerate(pie_colors):
+                axk.add_patch(Wedge((0, 0), 1.0, 90 - (i + 1) * step, 90 - i * step,
+                                    facecolor=c, edgecolor="white", lw=0.6, zorder=2))
+            if donut:
+                axk.add_patch(Circle((0, 0), 0.52, facecolor="white", edgecolor="#777", lw=1.2, zorder=3))
+            else:
+                axk.add_patch(Circle((0, 0), 1.0, facecolor="none", edgecolor="#555", lw=1.0, zorder=3))
+        pw, ph = 0.024, 0.043
+        draw_key([0.905, 0.840, pw, ph], donut=False)    # zero-shot = filled
+        draw_key([0.905, 0.778, pw, ph], donut=True)     # warm-start = donut
+        fig.text(0.937, 0.840 + ph / 2, "zero-shot",  va="center", ha="left", fontsize=9, color="#222")
+        fig.text(0.937, 0.778 + ph / 2, "warm-start", va="center", ha="left", fontsize=9, color="#222")
     _botang = ang[0] + np.pi + (ang[1] - ang[0]) / 2   # bottom between-spoke angle (both labels here)
-    axA.text(_botang, 0.108, "agent\nmore faithful", ha="center", va="center", fontsize=8.5,
+    axA.text(_botang, 0.15, "agent\nmore faithful", ha="center", va="center", fontsize=8.5,
              color="#2e7d32", style="italic", zorder=6)
-    axA.text(_botang, -0.048, "ranking\nmore faithful", ha="center", va="center", fontsize=8,
-             color="#b3445c", style="italic", zorder=6)
+    axA.text(0.5, 0.565, "ranking\nmore faithful", transform=axA.transAxes, ha="center", va="bottom",
+             fontsize=7.6, color="#b3445c", style="italic", zorder=9, linespacing=1.05,
+             bbox=dict(boxstyle="round,pad=0.14", fc="white", ec="none", alpha=0.7))
     axA.set_xticks(ang); axA.set_xticklabels([])
-    axA.set_yticks([0.0, 0.05, 0.10]); axA.set_yticklabels(["0", ".05", ".10"], fontsize=7, color="#777")
+    axA.set_yticks([0.0, 0.05, 0.10, 0.15]); axA.set_yticklabels(["0", ".05", ".10", ".15"], fontsize=7, color="#777")
     axA.grid(color="#dcdcdc", lw=0.7)
     axA.set_title("(b)  the agent's gain in faithfulness over the attribution ranking", fontsize=12, pad=20)
 
